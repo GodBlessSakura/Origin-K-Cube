@@ -1,0 +1,116 @@
+{% set widgetComponentName = 'kcube-' + request.blueprint + '-materialStatistic' %}
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;">
+    <div ref="canvas" style="height: 99%; width: 99%;"></div>
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="{{widgetComponentName}}">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    (() => {
+        widgetName = 'Course Material statistic'
+        widgetComponentName = '{{widgetComponentName}}'
+        KCube.widgetName.push(widgetName)
+        KCube.widgetOptions[widgetName] = {
+            widgetName: widgetName,
+            component: widgetComponentName,
+        }
+    })();
+    Vue.component(widgetComponentName, {
+        data: () => ({}),
+        methods: {
+            loadData() {
+                fetch("{{ url_for('RESTful.material.query', materialCourseCount=True) }}", {
+                        method: "GET",
+                        ...dashboardOption.fetchOption
+                    }).then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.count) {
+                            let element = this.$refs.canvas
+                            this.chart = echarts.init(element);
+                            let option = {
+                                tooltip: {
+                                    trigger: 'item'
+                                },
+                                legend: {
+                                    type: 'scroll',
+                                    orient: 'vertical',
+                                    right: 0,
+                                },
+                                title: [{
+
+                                    text: 'Total # of course materials: ' + body.count.map(c => c
+                                        .NumberOfMaterials).reduce((sum, value) => sum +
+                                        value, 0),
+                                    textAlign: 'center',
+                                    right: '5%',
+                                    bottom: '5%',
+                                    textStyle: {
+                                        fontSize: 15
+                                    }
+                                }, ],
+                                series: [{
+                                    type: 'pie',
+                                    radius: ['20%', '55%'],
+                                    center: ['30%', '50%'],
+                                    avoidLabelOverlap: false,
+                                    itemStyle: {
+                                        borderRadius: 10,
+                                        borderColor: '#fff',
+                                        borderWidth: 2
+                                    },
+                                    label: {
+                                        formatter: '{c}',
+                                        position: 'inside'
+                                    },
+                                    emphasis: {
+                                        label: {
+                                            show: true,
+                                            fontSize: '40',
+                                            fontWeight: 'bold'
+                                        }
+                                    },
+                                    labelLine: {
+                                        show: false
+                                    },
+                                    data: body.count.map(c => ({
+                                        value: c.NumberOfMaterials,
+                                        name: c.course.name
+                                    }))
+                                }]
+                            };
+                            console.log(option)
+                            this.chart.setOption(option)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+
+            }
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+        mounted: function () {
+            new ResizeObserver(() => {
+                if (this.chart) this.chart.resize()
+            }).observe(this.$el)
+            this.loadData()
+        },
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

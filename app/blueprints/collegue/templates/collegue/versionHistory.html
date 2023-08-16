@@ -1,0 +1,248 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-card style="height: 100%; width: 100%;">
+    <div id="cy" style="height: 100%; width: 100%;"></div>
+    <v-slider v-if="graphs" ticks="always" :tick-labels="graphs.map(g=>g.tag)" :min="0" step="1" tick-size="1"
+        :max="graphs.length-1" @change="showGraph($event)"
+        style="bottom:0; position: absolute; right: 15%;  left: 15%; width: 70%" v-model="slider">
+    </v-slider>
+    <v-btn  color="primary"
+    v-if="graphs" style="bottom:15px; position: absolute; right: 85%;" @click="intervalId == null?playGraph():pauseGraph()">
+        <v-icon>${slider == graphs.length - 1 ? "replay":intervalId == null?"play_arrow":"pause"}</v-icon>
+    </v-btn>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<style>
+</style>
+<script>
+    cy = cytoscape({
+        style: cyStyles.simpleStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    })
+    cytoscapeInstance = [{
+        cy: cy,
+        edgeSelector: "[value = 'true']",
+        options: "simpleStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: 64,
+        edgeElasticity: 128,
+        gravity: 0.15,
+        numIter: 750,
+        initialTemp: 2000,
+    }
+
+    function nodeFactory(name, classes) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            classes: classes,
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r.name,
+                deltaGraphIds: [edge.r.deltaGraphId],
+                id: edgeIdFromNames(edge.h_name, edge.r.name, edge.t_name),
+                value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name + '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({
+            triples: null,
+            metricsBottomSheet: false,
+            entityDialogue: true,
+            graphs: null,
+            slider: null,
+            versionsTimestamp: null,
+            firstVersionTimestamp: null,
+            lastVersionTimstamp: null,
+            intervalId: null,
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                        "{{ url_for('RESTful.triple.query') }}?deltaGraphId={{deltaGraphId}}&history=True", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.graphs && body.triples) {
+                            this.graphs = body.graphs.sort((a, b) => new Date(a.creationDate) - new Date(b
+                                .creationDate))
+                            this.firstVersionTimestamp = new Date(this.graphs[0].creationDate)
+                            this.lastVersionTimstamp = new Date(this.graphs[this.graphs.length - 1]
+                                .creationDate)
+                            this.versionsTimestamp = {}
+                            this.graphs.forEach(g => {
+                                this.versionsTimestamp[new Date(g.creationDate)] = g.tag
+
+                            })
+                            this.slider = this.graphs.length - 1
+                            console.log(this.graphs)
+                            this.triples = body.triples
+                            cy.add(nodeFactory(body.graphs[0].courseCode, ["course"]))
+                                .data(
+                                    'imageURL',
+                                    body.graphs[0].imageURL,
+                                )
+                            console.log(body.triples)
+                            body.triples.forEach(triple => {
+                                if (!triple.r.value) return;
+                                [triple.h_name, triple.t_name].forEach(
+                                    name => {
+                                        if (cy.getElementById(name).length == 0) {
+                                            cy.add(nodeFactory(name))
+                                        }
+                                    })
+                                edge = edgeFactory(triple)
+                                existingEdges = cy.getElementById(edge.data.id)
+                                if (existingEdges.length == 0) {
+                                    cy.add(edge)
+                                } else {
+                                    deltaGraphId = existingEdges[0].data('deltaGraphIds')
+                                    deltaGraphId.push(edge.data.deltaGraphIds[0])
+                                    existingEdges[0].data('deltaGraphIds', deltaGraphId)
+                                }
+
+                            })
+                            cy.elements().style('visibility', 'hidden')
+                            let cyLayout = cy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return cyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            cyLayout.one('layoutstop', function () {
+                                let initOption = {
+                                    ...coseLayoutOptions
+                                }
+                                initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                                initOption.numIter = Math.floor(initOption.numIter / 4)
+                                initOption.animate = false
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    let initOption = {
+                                        ...coseLayoutOptions
+                                    }
+                                    initOption.animate = false
+                                    cyLayout = cy.layout(initOption)
+                                    cyLayout.one('layoutstop', () => {
+                                        cy.elements().style('visibility', 'visible')
+                                    })
+                                    cyLayout.run()
+                                })
+                                cyLayout.run()
+                            })
+                            cyLayout.run()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+            },
+            showGraph(index) {
+                cy.edges().forEach(e => {
+                    let deltaGraphIds = e.data("deltaGraphIds")
+                    if (deltaGraphIds.includes(this.graphs[index].deltaGraphId)) {
+                        e.style('visibility', 'visible')
+                    } else {
+                        e.style('visibility', 'hidden')
+                    }
+                })
+            },
+            playGraph() {
+                if (this.slider == this.graphs.length - 1) {
+                    this.slider = 0
+                    this.showGraph(this.slider)
+                }
+                this.intervalId = window.setInterval(() => {
+                    if (this.slider == this.graphs.length - 1) {
+                        this.pauseGraph()
+                    } else {
+                        this.slider += 1
+                        this.showGraph(this.slider)
+
+                    }
+                }, 1000)
+            },
+            pauseGraph() {
+                window.clearInterval(this.intervalId)
+                this.intervalId = null
+            }
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            self = this
+            this.$nextTick(function () {
+                this.entityDialogue = false
+            })
+            cy.on('tap', 'node', (event) => {
+                console.log(event)
+                if (event.target == event.cy) return
+                console.log(event.target.classes())
+                if (event.target.classes().includes("course")) {} else {}
+            })
+            document.body.addEventListener("mouseup", (event) => {
+                console.log("click")
+                self.entityDialogue = false
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

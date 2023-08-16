@@ -1,0 +1,182 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-expansion-panels>
+                <v-expansion-panel>
+                    <v-expansion-panel-header>
+                        {{ courseCode }}
+                        <v-icon right>add_comment</v-icon>
+                    </v-expansion-panel-header>
+                    <v-expansion-panel-content>
+                        <v-form ref="feedbackControl">
+                            <v-text-field v-model="feedbackTitle" :rules="feedbackTitleRules" dense label="Title">
+                            </v-text-field>
+                            <v-text-field v-model="feedbackText" :rules="feedbackTextRules" dense label="Content">
+                            </v-text-field>
+                        </v-form>
+                        <v-btn small @click="submitFeedback">
+                            submit
+                        </v-btn>
+                    </v-expansion-panel-content>
+                </v-expansion-panel>
+            </v-expansion-panels>
+        </v-row>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="feedbacks" :items-per-page="500"
+                multi-sort :search="search">
+                <template v-slot:item.creationDate="{ item }">
+                    ${item.creationDate | formatDate}
+                </template>
+                <template v-slot:item.actions="{ item }">
+                    <v-icon @click="open(item.id)">
+                        pageview
+                    </v-icon>
+                </template>
+            </v-data-table>
+        </v-row>
+    </v-container>
+
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            search: '',
+            feedbacks: [],
+            headers: [{
+                    text: 'Title',
+                    value: 'title',
+                    groupable: false,
+                }, {
+                    text: 'Author',
+                    value: 'user',
+                },
+                {
+                    text: 'Date of creation',
+                    value: 'creationDate',
+                    groupable: false,
+                },
+                {
+                    text: 'Actions',
+                    value: 'actions',
+                    groupable: false,
+                },
+            ],
+            concepts: [],
+            feedbackConcept: '',
+            feedbackControl: true,
+            feedbackTitle: '',
+            feedbackTitleRules: [v => !!v || 'Title is required',
+                v => (v && v.length > 3 && v.length < 501) ||
+                'Title should be anything between 4 and 500 charactors',
+                v => (v && /{{regExpRules["title"]}}/.test(v)) ||
+                'Title can only contains alphanumeric characters and space.'
+            ],
+            feedbackText: '',
+            feedbackTextRules: [v => !!v || 'Content is required',
+                v => (v && v.length > 3 && v.length < 501) ||
+                'Content should be anything between 4 and 500 charactors',
+            ],
+            // cloneDiaglog: false,
+            // cloneSourceFeedbackId: "",
+            // cloneFeedbackName: "",
+            // cloneCourseCode: "",
+            courseCodes: [],
+            courseCodeRules: [v => !!v || 'Course code is required']
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let feedbackPromise = fetch(
+                        "{{ url_for('RESTful.feedback.query', courseCode = courseCode) | safe}}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.feedbacks = []
+                        if (body.feedbacks) {
+                            body.feedbacks.forEach(d => {
+                                this.feedbacks.push(d)
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting feedbacks information.')
+                        }
+                    })
+                Promise.all([feedbackPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            submitFeedback() {
+                if (this.$refs.feedbackControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.feedback.post', courseCode = courseCode) }}" +
+                            encodeURIComponent(this
+                                .feedbackConcept), {
+                                method: 'POST',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    title: this.feedbackTitle,
+                                    text: this.feedbackText
+                                })
+                            })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Creation failed for unknown reason.',
+                                this.loadData)
+                        })
+                }
+            },
+            open(id) {
+                let w = window.open("{{ url_for('collaborate.post')}}/" + id, '_blank')
+            }
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

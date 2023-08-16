@@ -1,0 +1,530 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-container dense style="height: calc(100vh - 64px); width: calc(100vw - 50px); margin: 0; max-width: none;">
+    <v-row dense style="width: 100%;">
+        <v-col>
+            <v-form dense ref="control">
+                <v-text-field dense v-model="tag" :rules="tagRules" label="tag for new workspace " required
+                    :disabled=isTrival>
+                </v-text-field>
+            </v-form>
+        </v-col>
+        <v-col dense style="text-align: center;">
+            <v-btn block @click="submit()" :disabled=isTrival>
+                ${isTrival?'no meaningful edge update was found':'create workspace from json'}
+            </v-btn>
+        </v-col>
+    </v-row>
+    <v-row dense style="width: 100%;">
+        <v-col cols="auto" dense>
+            <v-btn @click="fit()">
+                <v-icon>
+                    fit_screen
+                </v-icon>
+            </v-btn>
+        </v-col>
+        <v-col cols="auto" dense>
+            <v-menu offset-y>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn style="text-transform: none;" v-bind="attrs" v-on="on" tile>
+                        visualization
+                    </v-btn>
+                </template>
+                <v-list>
+                    <!-- <v-list-item @click="edgeStyleDialogue = true">
+                        <v-list-item-title>edge style<br>option</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>settings</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item> -->
+                    <v-list-item @click="metricsBottomSheet = true">
+                        <v-list-item-title>centrality<br>metrics</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>insights</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                </v-list>
+            </v-menu>
+        </v-col>
+        <v-col cols="auto" dense>
+            <v-menu offset-y>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn style="text-transform: none;" v-bind="attrs" v-on="on" tile>
+                        settings
+                    </v-btn>
+                </template>
+                <v-list>
+                    <v-dialog max-width="700px">
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-list-item v-bind="attrs" v-on="on">
+                                <v-list-item-title>graph<br>display<br>options</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>palette</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </template>
+                        <kcube-cy-options-dialog></kcube-cy-options-dialog>
+                    </v-dialog>
+                </v-list>
+            </v-menu>
+        </v-col>
+        <v-col>
+            <v-dialog v-model="importDialogue" width="500">
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn v-bind="attrs" v-on="on">
+                        import graph
+                    </v-btn>
+                </template>
+                <kcube-triplesImport-form @json-error="clearPreview()" :courseCode="graph?.courseCode"
+                    @triples="graphPreview($event); importDialogue = false"></kcube-triplesImport-form>
+            </v-dialog>
+        </v-col>
+    </v-row>
+    <v-row dense style="height: 90%; width: 100%;">
+        <v-col dense style="height: 100%">
+            <v-card style="height: 100%; width: 100%;">
+                <v-container dense style="height: 100%; width: 100%;">
+                    <v-row dense>
+                        <v-col dense style="text-align: center;">
+                            Original graph - ${graph?.tag} (${graph?.labels?.join(', ')})
+                        </v-col>
+                    </v-row>
+                    <v-row dense style="height: 100%; width: 100%;">
+                        <div id="subject" style="height: 100%; width: 100%;"></div>
+                    </v-row>
+                </v-container>
+            </v-card>
+        </v-col>
+        <v-col dense style="height: 100%">
+            <v-card style="height: 100%; width: 100%;">
+                <v-container dense style="height: 100%; width: 100%;">
+                    <v-row dense>
+                        <v-col dense style="text-align: center;">
+                            Update preview
+                        </v-col>
+                    </v-row>
+                    <v-row dense style="height: 100%; width: 100%;">
+                        <div id="preview" style="height: 100%; width: 100%;"></div>
+                    </v-row>
+                </v-container>
+            </v-card>
+        </v-col>
+    </v-row>
+    <v-bottom-sheet v-model="metricsBottomSheet" insert :hide-overlay="true" no-click-animation>
+        <kcube-metrics-visualize-bottom-sheet>
+        </kcube-metrics-visualize-bottom-sheet>
+    </v-bottom-sheet>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+{% include "instructor/components/triplesImportForm.html" %}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<script>
+    previewCyOption = {
+        style: cyStyles.previewStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+        autounselectify: true
+    }
+    subjectCyOption = {
+        style: cyStyles.subjectStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+        autounselectify: true
+    }
+    previewCy = cytoscape(previewCyOption)
+    subjectCy = cytoscape(subjectCyOption)
+    cytoscapeInstance = [{
+        cy: previewCy,
+        edgeSelector: "[original_value= 'true'][preview_value != 'false'],[preview_value = 'true']",
+        options: "previewStyle"
+    }, {
+        cy: subjectCy,
+        edgeSelector: "[original_value= 'true']",
+        options: "subjectStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: function (edge) {
+            return 64;
+        },
+        edgeElasticity: function (edge) {
+            return 128;
+        },
+        gravity: 0.15
+
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+            pannable: true,
+        }
+        return output
+    }
+
+    function previewEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                preview_value: (edge.r_value == undefined || edge.r_value) ? 'true' : 'false',
+                original_value: 'undefined',
+            }
+        }
+        return output
+
+    }
+
+    function originalEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                preview_value: 'undefined',
+                original_value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+
+        return h_name + '.' + r_name + '.' + t_name
+    }
+
+    Vue.component('app-content', {
+        data: () => ({
+            relationships: [],
+            tag: '',
+            tagRules: [v => !!v || 'Tag is required',
+                v => (v && v.length > 3 && v.length) < 101 ||
+                'Tag should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            options: [],
+            isTrival: false,
+            graph: undefined,
+            visibility: '',
+            greaterVisibility: [],
+            proceeded: false,
+            confirmed: false,
+            userTriples: null,
+            metricsBottomSheet: false,
+            importDialogue: false,
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let graphPromise = fetch(
+                        "{{ url_for('RESTful.graph.get', deltaGraphId=deltaGraphId) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.graph && body.triples) {
+                            this.graph = body.graph
+                            previewCy.add(nodeFactory(body.graph.courseCode)).data(
+                                'imageURL',
+                                body.graph.imageURL,
+                            )
+                            body.triples.forEach(triple => {
+                                [triple.h_name, triple.t_name].forEach(name => {
+                                    if (previewCy.getElementById(name).length == 0) {
+                                        previewCy.add(nodeFactory(name))
+                                    }
+                                })
+                                let edge = previewCy.getElementById(edgeIdFromNames(triple.h_name,
+                                    triple
+                                    .r_name,
+                                    triple.t_name))[0]
+                                if (edge) {
+                                    edge.data({
+                                        original_value: triple.r_value ? 'true' : 'false'
+                                    })
+                                } else {
+                                    previewCy.add(originalEdgeFactory(triple))
+                                }
+                            })
+                            if (previewCy.edges(
+                                    '[preview_value = "false"][original_value = "true"],' +
+                                    '[preview_value = "true"][original_value = "false"],' +
+                                    '[preview_value = "true"][original_value = "undefined"]'
+                                ).length == 0) {
+                                this.isTrival = true
+                            }
+                            this.rootName = body.graph.courseCode
+                            let previewCyDijkstra = previewCy.elements().dijkstra('node[id = "' + this
+                                .rootName +
+                                '"]')
+                            previewCy.elements().style('visibility', 'hidden')
+                            let previewLayout = previewCy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return previewCyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            previewLayout.one('layoutstop', function () {
+                                let previewLayout = previewCy.layout(coseLayoutOptions)
+                                previewLayout.one('layoutstop', function () {
+                                    subjectCy.add(previewCy.elements().clone())
+                                    subjectCy.fit(coseLayoutOptions.padding)
+                                    previewCy.elements().style('visibility', 'visible')
+                                })
+                                previewLayout.run()
+                            })
+                            previewLayout.run()
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting draft information.')
+                        }
+                    })
+                let relationshipPromise =
+                    fetch("{{ url_for('RESTful.relationship.query', approved=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.relationships) {
+                            this.relationships = body.relationships
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+
+                Promise.all([graphPromise, relationshipPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            fit() {
+                previewCy.fit()
+                subjectCy.fit()
+            },
+            clearPreview() {
+                previewCy.edges().forEach(edge => {
+                    edge.data('preview_value', 'undefined')
+                })
+            },
+            submit() {
+                if (!this.$refs.control.validate()) {
+                    return
+                }
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                if (this.isTrival) {
+                    this.$root.errorDisplay({},
+                        "You can't submit a trival update")
+                    return
+                }
+                this.$root.progress.show = true
+                let acceptedTriple = []
+                this.userTriples.forEach(triple => {
+                    if (!triple.h_name instanceof String ||
+                        !triple.t_name instanceof String ||
+                        !triple.r_name instanceof String)
+                        return;
+                    //{% if not (PERMISSION and PERMISSION.canApproveRelationship) %}
+                    if (!this.relationships.includes(triple.r_name)) {
+                        return
+                    }
+                    //{% endif %}
+                    acceptedTriple.push(triple)
+                })
+                let body = {
+                    tag: this.tag,
+                    triples: JSON.stringify(acceptedTriple),
+
+                }
+                fetch('{{ url_for("RESTful.workspace.post", deltaGraphId=deltaGraphId)}}', {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Unexpected error on importing triples.',
+                            () => {
+                                window.location.replace("{{ url_for('instructor.workspace')}}" + body
+                                    .deltaGraphId)
+                            })
+                    })
+            },
+            graphPreview(triples) {
+                console.log(triples)
+                this.userTriples = triples
+                previewCy.edges().forEach(edge => {
+                    edge.data('preview_value', 'undefined')
+                })
+                subjectCy.elements().remove()
+                let unacceptedRelationship = []
+                triples.forEach(triple => {
+                    if (!triple.h_name instanceof String ||
+                        !triple.t_name instanceof String ||
+                        !triple.r_name instanceof String)
+                        return;
+                    //{% if not (PERMISSION and PERMISSION.canApproveRelationship) %}
+                    if (!this.relationships.includes(triple.r_name)) {
+                        unacceptedRelationship.push(triple.r_name)
+                        return
+                    }
+                    //{% endif %}
+                    [triple.h_name, triple.t_name].forEach(name => {
+                        if (previewCy.getElementById(name).length == 0) {
+                            previewCy.add(nodeFactory(name))
+                        }
+                    })
+                    let edge = previewCy.getElementById(edgeIdFromNames(triple.h_name,
+                        triple
+                        .r_name,
+                        triple.t_name))[0]
+                    if (edge) {
+                        edge.data({
+                            preview_value: (triple.r_value == undefined || triple.r_value) ?
+                                'true' : 'false'
+                        })
+                    } else {
+                        previewCy.add(previewEdgeFactory(triple))
+                    }
+                });
+                if (unacceptedRelationship.length > 0) {
+                    this.$root.errorDisplay({},
+                        'some relationships are not approved: ' +
+                        unacceptedRelationship.join(', '))
+                    previewCy.edges().forEach(edge => {
+                        edge.data('preview_value', 'undefined')
+                    })
+                }
+                if (previewCy.edges(
+                        '[preview_value = "false"][original_value = "true"],' +
+                        '[preview_value = "true"][original_value = "false"],' +
+                        '[preview_value = "true"][original_value = "undefined"]'
+                    ).length == 0) {
+                    this.isTrival = true
+                } else {
+                    this.isTrival = false
+                }
+                this.importDialogue = false
+                previewCy.elements().style('visibility', 'hidden')
+                let previewLayout = previewCy.layout({
+                    ...concentricLayoutOptions,
+                    // concentric: function (node) {
+                    //     return previewCyDijkstra.distanceTo(node) * -1
+                    // }
+                })
+                previewLayout.one('layoutstop', function () {
+                    let previewLayout = previewCy.layout(coseLayoutOptions)
+                    previewLayout.one('layoutstop', function () {
+                        subjectCy.add(previewCy.elements().clone())
+                        subjectCy.fit(coseLayoutOptions.padding)
+                        previewCy.elements().style('visibility', 'visible')
+                    })
+                    previewLayout.run()
+                })
+                previewLayout.run()
+            },
+        },
+        mounted: function () {
+            previewCy.mount(document.getElementById("preview"))
+            subjectCy.mount(document.getElementById("subject"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            previewCy.on('dragpan', (event) => {
+                subjectCy.pan(previewCy.pan())
+            })
+            previewCy.on('pinchzoom', (event) => {
+                subjectCy.zoom(previewCy.zoom())
+                subjectCy.pan(previewCy.pan())
+            })
+            previewCy.on('scrollzoom ', (event) => {
+                subjectCy.zoom(previewCy.zoom())
+                subjectCy.pan(previewCy.pan())
+            })
+            subjectCy.on('dragpan', (event) => {
+                previewCy.pan(subjectCy.pan())
+            })
+            subjectCy.on('pinchzoom', (event) => {
+                previewCy.zoom(subjectCy.zoom())
+                previewCy.pan(subjectCy.pan())
+            })
+            subjectCy.on('scrollzoom ', (event) => {
+                previewCy.zoom(subjectCy.zoom())
+                previewCy.pan(subjectCy.pan())
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

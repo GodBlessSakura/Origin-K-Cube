@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-form ref="imageForm">
+    <v-container>
+        <v-row>
+            <v-col>
+                <v-file-input accept="image/*" name="file" label="File input" multiple required></v-file-input>
+            </v-col>
+            <v-col>
+                <v-btn @click="uploadImage" color="success">Upload</v-btn>
+            </v-col>
+        </v-row>
+    </v-container>
+</v-form>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+
+        }),
+        methods: {
+            uploadImage() {
+                if (this.$refs.imageForm.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    let formData = new FormData(this.$refs.imageForm.$el)
+                    this.$root.progress.show = true
+                    fetch("{{ url_for(request.blueprint+'.uploads.image') }}", {
+                            method: 'POST',
+                            cache: 'no-store',
+                            body: formData
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false;
+                            (new BroadcastChannel("*-courseForm"))
+                            .postMessage({
+                                message: 'imageUploaded',
+                                payload: body.urls
+                            }, '*')
+                            this.$root.responseSnackBar(body,
+                                'unexpected error',
+                                this.$refs.imageForm.reset)
+
+                        })
+                }
+            }
+        },
+        template: '#content'
+    })
+</script>
+{% endblock %}

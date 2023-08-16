@@ -1,0 +1,554 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}<v-card style="height: 100%; width: 100%;">
+    <v-container style="height: 100%; width: 100%;">
+        <v-row style="height: 20%;">
+            <v-col></v-col>
+            <v-col cols="auto">
+                <v-card elevation="5" style="background-color: rgba(255,255,255,0.75);">
+                    <v-container no-gutters>
+                        <v-row no-gutters>
+                            <v-col>
+                                <v-autocomplete hide-details hide-no-data ref="searchBar" dense style="width: 100%"
+                                    append-icon="" :menu-props="{ ...(!search && {value:false}) }"
+                                    :search-input.sync="search" label="Show info of ...(course code / course name)"
+                                    clearable :items="items"
+                                    @change="showingEdgeTag.length > 0?showAllPath($event):gotoPage($event)">
+                                </v-autocomplete>
+                            </v-col>
+                        </v-row>
+                        <v-row no-gutters>
+                            <v-col cols="auto">
+                                <v-select style="width: 10vw" v-model="showingEdgeTag" :items="[...edgeTags]"
+                                    label="Show relation" multiple>
+                                    <template v-slot:prepend-item>
+                                        <v-list-item @click="showingEdgeTag=[]">
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    Hide All
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                        <v-divider class="mt-2"></v-divider>
+                                        <v-list-item @click="showingEdgeTag=[...edgeTags]">
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    Select All
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                        <v-divider class="mt-2"></v-divider>
+                                    </template>
+                                    <template v-slot:selection="{ item, index }">
+                                        <span class="grey--text text-caption" v-if="index === 0">
+                                            ${showingEdgeTag.length == 1? showingEdgeTag[0]:
+                                            showingEdgeTag.length+' relation selected'}
+                                        </span>
+                                    </template>
+                                </v-select>
+                            </v-col>
+                            <v-col cols="auto">
+                                <v-subheader>Recent visit</v-subheader>
+                            </v-col>
+                            <v-col cols="auto">
+                                <v-chip-group style="width: 60vw">
+                                    <v-chip label v-for="(url, name) in visitedCourseGraph" :href="url">
+                                        ${name.split("_")[0] + " from " + (name.split("_").slice(1).join('_') == "None"?
+                                        'department':name.split("_").slice(1).join('_'))}
+                                    </v-chip>
+                                </v-chip-group>
+                            </v-col>
+                        </v-row>
+                    </v-container>
+                </v-card>
+            </v-col>
+            <v-col></v-col>
+        </v-row>
+        <v-row style="height: 80%;">
+            <div id="canvas" style="height: 99%; width: 99%;"></div>
+        </v-row>
+    </v-container>
+    <v-bottom-sheet :retain-focus="false" hide-overlay persistent no-click-animation inset
+        :value="paths?paths.length>0:false">
+        <v-container v-if="paths" style="max-height: 40vh; overflow: auto; width: 100%; background-color: white;">
+            <v-row no-gutters>
+                <v-col cols="auto">
+                    Related course of <v-btn text color="primary" :href="paths[0].filter(ele=>ele.highlight)[0].url">
+                        ${paths[0].filter(ele=>ele.highlight)[0].tag}</v-btn>: (you may click the course code for
+                    entering course page)
+                </v-col>
+            </v-row>
+            <v-row no-gutters v-for="path in paths">
+                <v-col cols="auto" v-for="ele in path">
+                    <v-tooltip v-if="ele.id" top :disabled="ele.highlight">
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn text v-on="on" :color="ele.highlight?'primary':''" :href="ele.url"
+                                style="text-transform: none;">${ele.id}</v-btn>
+                        </template>
+                        ${ele.tag}
+                    </v-tooltip>
+                    <v-btn v-else depressed tile style="pointer-events: none; text-transform: none;"
+                        :style="{backgroundColor: ele.color, color: 'white'}">${ele.id?'':ele.tag}</v-btn>
+                </v-col>
+            </v-row>
+        </v-container>
+    </v-bottom-sheet>
+    <v-snackbar style="z-index:0; bottom:10vh" right :color="edgeColor" v-model="focusingEdge" timeout="-1">
+        <v-row no-gutters>
+            <v-col cols="auto">
+                <v-btn color="primary" text style="text-transform: none; background-color: white;"
+                    @click="showAllPath(edgeSource,[edgeTag]);focusingEdge=false">${edgeSource}</v-btn>
+            </v-col>
+            <v-col style="text-align: center">
+                <v-btn style="pointer-events: none" text>${edgeTag}</v-btn>
+            </v-col>
+            <v-col cols="auto">
+                <v-btn color="primary" text style="text-transform: none; background-color: white;"
+                    @click="showAllPath(edgeEnd,[edgeTag]);focusingEdge=false">${edgeEnd}</v-btn>
+            </v-col>
+        </v-row>
+    </v-snackbar>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.echartsCDN() }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.24.1/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-library@0.7.1/dist/graphology-library.min.js"></script>
+<script>
+    /*https://github.com/almende/vis/issues/2567
+    getter and setter proxy of vue will mess up the vis
+    */
+    nodes = [];
+    edges = [];
+    const graph = new graphology.MultiGraph();
+
+
+    Vue.component('app-content', {
+        data: () => ({
+            paths: undefined,
+            focusingNode: false,
+            focusingEdge: false,
+            edgeSource: "",
+            edgeTag: "",
+            edgeEnd: "",
+            edgeColor: "",
+            search: "",
+            edgeTags: new Set(),
+            showingEdgeTag: [],
+            items: [],
+            visitedCourseGraph: JSON.parse(localStorage.getItem('visitedCourseGraph'))
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+
+                let coursePromise = fetch(
+                        "{{ url_for('RESTful.course.query', list=True) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.items = []
+                        if (body.courses) {
+                            body.courses.forEach(c => {
+                                this.items.push({
+                                    text: c.concept.name,
+                                    value: c.concept.name
+                                })
+                                this.items.push({
+                                    text: c.course.courseName,
+                                    value: c.course.courseName
+                                })
+                                graph.addNode(c.concept.name, {
+                                    id: c.concept.name,
+                                    tag: c.course.courseName,
+                                    imageURL: c.course.imageURL,
+                                    url: "{{ url_for('course')}}" + encodeURIComponent(c
+                                        .concept.name)
+
+                                });
+                            })
+                            return body
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                let aggregatedPromise = fetch("{{ url_for('RESTful.triple.query', aggregated=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.triples) {
+                            return body
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting draft information.')
+
+                        }
+                    })
+                let relationshipPromise = fetch("{{ url_for('RESTful.metagraph.query', triples=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        if (body.triples) {
+                            return body
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+                Promise.all([coursePromise, aggregatedPromise, relationshipPromise]).then(bodies => {
+                    this.edgeTags = new Set(bodies[2].triples.map(t => t.r_name))
+                    let relationship = [...new Set(bodies[2].triples.map(t => t.r_name))]
+                    let colorMap = [
+                        [0.1216, 0.4667, 0.5059],
+                        [1.0, 0.498, 0.0549],
+                        [0.1725, 0.6275, 0.1725],
+                        [0.8392, 0.1529, 0.1569],
+                        [0.5804, 0.4039, 0.7412],
+                        [0.549, 0.3373, 0.2941],
+                        [0.8902, 0.4667, 0.7608],
+                        [0.498, 0.498, 0.498],
+                        [0.7373, 0.7412, 0.1333],
+                        [0.0902, 0.7451, 0.8118]
+                    ].map(rgb => rgb.map(c => Math.floor(c * 255))).map(rgb => "rgb(" + rgb.join(
+                        ',') + ")")
+                    let nodeSet = new Set()
+                    let element = document.getElementById("canvas");
+                    let chart = echarts.init(element);
+
+                    function nodeFactory({
+                        name,
+                    }) {
+                        let node = {
+                            id: name,
+                            name: name,
+                            value: 0
+                        }
+                        let angle = Math.random() * Math.PI * 2
+                        node.x = chart.getHeight() / 2 * Math.cos(angle)
+                        node.y = chart.getHeight() / 2 * Math.sin(angle)
+
+                        return node
+                    }
+
+                    function edgeFactory({
+                        source,
+                        target,
+                    }) {
+                        let edge = {
+                            source: source,
+                            target: target
+                        }
+                        edge.value = chart.getHeight() / 16
+                        return edge
+                    }
+                    bodies[1].triples.forEach(triple => {
+                        edges.push(
+                            edgeFactory({
+                                source: triple.h_name,
+                                target: triple.t_name,
+                            })
+                        )
+                        nodeSet.add(triple.h_name)
+                        nodeSet.add(triple.t_name)
+                    });
+                    nodeSet.forEach(node => {
+                        nodes.push(nodeFactory({
+                            name: node
+                        }))
+                        edges.filter(edge => edge.source == node || edge.target == node)
+                            .forEach(edge => {
+                                edge.value = chart.getHeight() / 2
+                            })
+                    })
+                    bodies[1].courses.forEach(course => {
+                        let node = nodes.filter(node => node.id == course.concept.name)
+                        if (node.length > 0) {
+                            node = node[0]
+                            node.symbol = 'image://' + course.course.imageURL
+                            node.symbolSize = chart.getHeight() / 16
+                            node.label = {
+                                show: true,
+                                position: "top"
+                            }
+                            let angle = Math.random() * Math.PI * 2
+                            node.x = chart.getHeight() / 16 * Math.cos(angle)
+                            node.y = chart.getHeight() / 16 * Math.sin(angle)
+                            node.isCourse = true
+                            node.value = 9007199254740991
+                        }
+
+                    })
+                    bodies[2].triples.forEach(triple => {
+                        let bothCourseExists = true
+                        for (let name of [triple.h_name, triple.t_name]) {
+                            if (nodes.filter(node => node.id == name).length == 0) {
+                                bothCourseExists = false
+                                break
+                            }
+                        }
+                        if (!bothCourseExists) return
+                        let color = colorMap[relationship.indexOf(triple.r_name) % colorMap
+                            .length]
+                        edge = edgeFactory({
+                            source: triple.h_name,
+                            target: triple.t_name,
+                        })
+                        edge.lineStyle = {
+                            color: color,
+                            width: 5,
+                        }
+                        edge.tag = triple.r_name
+                        edge.color = color
+                        edge.value = chart.getHeight() / 16
+                        edge.isMeta = true
+                        edges.push(
+                            edge
+                        )
+                    })
+                    bodies[2].triples.forEach(triple => {
+                        let bothCourseExists = true
+                        for (let name of [triple.h_name, triple.t_name]) {
+                            if (!graph.hasNode(name)) {
+                                bothCourseExists = false
+                                break
+                            }
+                        }
+                        if (!bothCourseExists) return
+                        let color = colorMap[relationship.indexOf(triple.r_name) % colorMap
+                            .length]
+                        graph.addEdge(triple.h_name, triple.t_name, {
+                            tag: triple.r_name,
+                            color: color,
+                        })
+                    })
+
+                    let option = {
+                        series: [{
+                            type: 'graph',
+                            layout: 'force',
+                            animation: false,
+                            nodes: nodes,
+                            force: {
+                                repulsion: chart.getHeight() / 16,
+                                edgeLength: chart.getHeight() / 8
+                            },
+                            roam: true,
+                            edges: edges
+                        }]
+                    };
+                    chart.setOption(option)
+                    chart.on("click", (e) => {
+                        if (e.dataType == "node") {
+                            let node = e.data
+                            if (node.isCourse) {
+                                this.showingEdgeTag.length > 0 ? this.showAllPath(e.name) :
+                                    this.gotoPage(e.name)
+                                this.focusingEdge = false
+
+                            }
+
+                        } else if (e.dataType == "edge") {
+                            let edge = e.data
+                            if (edge.isMeta) {
+                                let source = edge.source
+                                let target = edge.target
+                                this.edgeSource = source
+                                this.edgeEnd = target
+                                this.edgeTag = edge.tag
+                                this.edgeColor = edge.color
+                                this.focusingEdge = true
+                                this.paths = undefined
+                            }
+                        }
+                    })
+                    this.$root.progress.show = false
+                })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            },
+            gotoPage(tagOrId) {
+                if (tagOrId) {
+                    if (graph.hasNode(tagOrId)) {
+                        location.href = graph.getNodeAttribute(tagOrId, "url")
+                    } else {
+                        let ids = graph.filterNodthis.showingEdgeTage((id, attr) => attr.tag == tagOrId)
+                        if (ids.length > 0)
+                            location.href = graph.getNodeAttribute(ids[0], "url")
+                    }
+                }
+            },
+            showAllPath(tagOrId, edgeTag = this.showingEdgeTag) {
+                if (tagOrId) {
+                    let id = tagOrId
+                    if (!graph.hasNode(tagOrId)) {
+                        let ids = graph.filterNodes((id, attr) => attr.tag == tagOrId)
+                        if (ids.length == 0) return
+                        id = ids[0]
+                    }
+                    let predecessorsPath = []
+                    graphologyLibrary.traversal.dfsFromNode(graph, id,
+                        (node, attr, depth) => {
+                            graphologyLibrary.simplePath.allSimpleEdgeGroupPaths(graph, node, id).forEach(
+                                paths => {
+                                    paths.forEach(path => path.forEach(edge => {
+                                        let tag = graph.getEdgeAttribute(edge, 'tag')
+                                        if (!edgeTag.includes(tag)) return;
+                                        let source = graph.source(edge)
+                                        let target = graph.target(edge)
+                                        let paths = predecessorsPath.filter(sPath => sPath[
+                                                0]
+                                            .id == target)
+                                        if (paths.length == 0) {
+                                            if (predecessorsPath.filter(p => p[p.length - 3]
+                                                    .id == source && p[p.length - 1].id ==
+                                                    target && p[p.length - 2].tag == tag)
+                                                .length != 0) {
+                                                return
+                                            }
+                                            predecessorsPath.push([{
+                                                    ...graph.getNodeAttributes(
+                                                        source),
+                                                },
+                                                graph.getEdgeAttributes(edge),
+                                                {
+                                                    ...graph.getNodeAttributes(
+                                                        target),
+                                                    highlight: target == id,
+                                                }
+
+                                            ])
+                                        } else {
+                                            paths[0].unshift({
+                                                    ...graph
+                                                    .getNodeAttributes(
+                                                        source),
+                                                    highlight: source == id,
+                                                },
+                                                graph.getEdgeAttributes(
+                                                    edge)
+                                            )
+                                        }
+                                    }))
+                                })
+                        }, {
+                            mode: 'inbound'
+                        })
+
+                    let successorsPath = []
+                    graphologyLibrary.traversal.dfsFromNode(graph, id,
+                        (node, attr, depth) => {
+                            graphologyLibrary.simplePath.allSimpleEdgeGroupPaths(graph, id, node).forEach(
+                                paths => {
+                                    paths.forEach(path => path.forEach(edge => {
+                                        let tag = graph.getEdgeAttribute(edge, 'tag')
+                                        if (!edgeTag.includes(tag)) return;
+                                        let source = graph.source(edge)
+                                        let target = graph.target(edge)
+                                        let paths = successorsPath.filter(pPath => pPath[
+                                                pPath
+                                                .length - 1]
+                                            .id == source)
+                                        if (paths.length == 0) {
+                                            if (successorsPath.filter(p => p[0]
+                                                    .id == source && p[2].id == target && p[
+                                                        1].tag == tag && source == id)
+                                                .length != 0) {
+                                                return
+                                            }
+                                            if (source == id) {
+                                                successorsPath.push([{
+                                                        ...graph.getNodeAttributes(
+                                                            source),
+                                                        highlight: true,
+                                                    },
+                                                    graph.getEdgeAttributes(edge),
+                                                    {
+                                                        ...graph.getNodeAttributes(
+                                                            target),
+                                                    }
+                                                ])
+                                            } else {
+                                                let copy = successorsPath.filter(p => p.map(
+                                                    e => e.id).includes(source))
+                                                if (copy.length > 0) {
+                                                    successorsPath.push([...copy[0].slice(0,
+                                                        copy[0].indexOf(
+                                                            e => e.id == source)
+                                                    ), {
+                                                        ...graph
+                                                        .getNodeAttributes(
+                                                            target)
+                                                    }])
+                                                }
+                                            }
+                                        } else {
+                                            paths[0].push(
+                                                graph.getEdgeAttributes(
+                                                    edge), {
+                                                    ...graph
+                                                    .getNodeAttributes(
+                                                        target)
+                                                }
+                                            )
+                                        }
+                                    }))
+                                })
+                        }, {
+                            mode: 'outbound'
+                        })
+
+                    this.paths = [...predecessorsPath, ...successorsPath]
+                    this.paths = this.paths.length > 0 ? this.paths : [
+                        [{
+                            id: graph.getNodeAttribute(id, 'id'),
+                            tag: graph.getNodeAttribute(id, 'tag'),
+                            url: graph.getNodeAttribute(id, 'url'),
+                            highlight: true,
+                        }]
+                    ]
+                }
+            },
+        },
+        mounted: function () {
+            this.loadData()
+
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

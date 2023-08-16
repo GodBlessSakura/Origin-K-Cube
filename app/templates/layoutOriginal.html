@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Graph Visualization</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/logo.jpg') }}">
+
+    <!-- Vuetify stylesheet -->
+    <link
+        href="{{ url_for('static', filename='material-design-icons-iconfont-master/dist/material-design-icons.css') }}"
+        rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@4.x/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@2.x/dist/vuetify.min.css" rel="stylesheet">
+
+
+    <!-- material icon stylesheet -->
+    <!-- <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet"> -->
+    <!--=================================================-->
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+    <script src=" https://cdn.jsdelivr.net/npm/vue@2.x/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@2.x/dist/vuetify.js"></script>
+    <!-- CDNJS :: Sortable (https://cdnjs.com/) -->
+    <script src="//cdn.jsdelivr.net/npm/sortablejs@1.8.4/Sortable.min.js"></script>
+    <!-- CDNJS :: Vue.Draggable (https://cdnjs.com/) -->
+    <script src="//cdnjs.cloudflare.com/ajax/libs/Vue.Draggable/2.20.0/vuedraggable.umd.min.js"></script>
+    <!--  -->
+    <script src="https://cdn.jsdelivr.net/npm/shepherd.js@8.3.1/dist/js/shepherd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shepherd.js@8.3.1/dist/css/shepherd.css" />
+    <script src="https://cdn.jsdelivr.net/npm/vue-shepherd@0.2.1/dist/vue-shepherd.umd.js"></script>
+    <style>
+        [v-cloak] {
+            display: none;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+    </style>
+    <div id="nav" v-cloak>
+        <v-app>
+            <v-progress-linear style="z-index: 300" :active="progress.show" indeterminate rounded height="10">
+            </v-progress-linear>
+            <v-app-bar :value="appBar" app color="secondary">
+                <v-card v-if="appBar" color="secondary" style="align-items: center;" tile elevation="0">
+                    <a href="{{ url_for('index') }}" style="position:absolute; height:100%; width:100%"></a>
+                    <v-card-title>
+                        <v-avatar class="profile" size="30" tile>
+                            <v-img src="{{ url_for('static', filename='images/logo.png') }}">
+                            </v-img>
+                        </v-avatar>
+                        KCUBE
+                    </v-card-title>
+                </v-card>
+                <template v-if="KCube.tabs && KCube.tabs.length > 0">
+                    <v-select @change="switchRole" style="max-width: 200px;" solo hide-details
+                        background-color="transparent" flat label="view as" v-model="KCube.view" :items="KCube.roleTab"
+                        item-text="name" item-value="name" ref="shepherd-roleSelect">
+                        <template v-slot:item="{ item, on, attrs }">
+                            <v-list-item dense v-bind="attrs" v-on="on">
+                                <v-list-item-icon>
+                                    <v-icon>${item.icon}</v-icon>
+                                </v-list-item-icon>
+                                <v-list-item-content>
+                                    <v-list-item-title v-text="item.name"></v-list-item-title>
+                                </v-list-item-content>
+                            </v-list-item>
+                        </template>
+                        <template v-slot:selection="{ item }">
+                            <v-list-item dense>
+                                <v-list-item-icon>
+                                    <v-icon>${item.icon}</v-icon>
+                                </v-list-item-icon>
+                                <v-list-item-content>
+                                    <v-list-item-title v-text="item.name"></v-list-item-title>
+                                </v-list-item-content>
+                            </v-list-item>
+                        </template>
+                    </v-select>
+                    <v-tabs v-model="tabIndex" :optional="tabIndex === undefined" icons-and-text
+                        ref="shepherd-layoutTab"
+                        style="position: absolute; left: 50%; transform: translateX(-50%); width: unset;">
+                        {% for i in [0,1,2,3,4,5,6] %}
+                        <v-tab v-if="KCube.tabs[{{i}}]" style="pointer-events: none;">
+                            ${KCube.tabs[{{i}}].title}
+                            <v-icon>
+                                ${KCube.tabs[{{i}}].icon}
+                            </v-icon>
+                            <a style="position: absolute; width: 100%; height: 100%; pointer-events: auto;" @click.stop
+                                :href="KCube.tabs[{{i}}].url"></a>
+                        </v-tab>
+                        {% endfor %}
+                    </v-tabs>
+                </template>
+                <v-spacer></v-spacer>
+                <v-menu offset-y eager open-on-hover>
+                    <template v-slot:activator="{ on: onMenu }">
+                        <v-btn v-on="{ ...onMenu}" :ripple="{ class: 'warning--text',center: true }"
+                            ref="shepherd-help">
+                            help</v-btn>
+                    </template>
+                    <v-list>
+                        <v-list-item>
+                            A tour of the website
+                        </v-list-item>
+                        <v-divider> </v-divider>
+                        <v-list-item @click="appIntro()" :ripple="{ class: 'warning--text',center: true }"
+                            ref="shepherd-appIntro">
+                            <v-list-item-title>Overview</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item v-show="pageIntro" @click="pageIntro()" ref="shepherd-pageIntro"
+                            :ripple="{ class: 'warning--text',center: true }" ref="shepherd-pageIntro">
+                            <v-list-item-title>This particular page</v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-menu>
+                </template>
+                {% if session['user'] %}
+                <v-menu offset-y eager>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn text v-bind="attrs" v-on="on" style="text-transform: none !important;"
+                            ref="shepherd-userMenu">
+                            {{USER.userName if USER.userName else USER.email}}<v-icon>arrow_drop_down</v-icon>
+                        </v-btn>
+                    </template>
+                    <v-list>
+                        <v-list-item href="{{ url_for('user.profile') }}" ref="shepherd-userProfile">
+                            <v-list-item-title>{% if "OIDC" not in config %}Edit{% endif %} Profile</v-list-item-title>
+                        </v-list-item>
+                        {% if "OIDC" not in config %}
+                        <v-list-item href="{{ url_for('user.changePassword') }}">
+                            <v-list-item-title>Change Password</v-list-item-title>
+                        </v-list-item>
+                        {% endif %}
+                        <v-list-item href="{{ url_for('user.logout') }}">
+                            <v-list-item-title>Logout</v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-menu>
+                {% elif "OIDC" in config %}
+                <v-btn text href="{{url_for('odic_login')}}" :disabled="atemptOidcLogin">
+                    login in with PolyU account
+                </v-btn>
+                {% else %}
+                <v-dialog v-model="shouldShowLoginForm" persistent max-width="600px">
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn text v-bind="attrs" v-on="on" @click="tab=1">
+                            Sign up
+                        </v-btn>
+                        <v-btn text v-bind="attrs" v-on="on" @click="tab=2">
+                            Login
+                        </v-btn>
+                    </template>
+                    <v-card>
+                        <v-card-text>
+                            <v-container>
+                                <v-tabs v-model="tab">
+                                    <v-tab :key="login">Login </v-tab>
+                                    <v-tab :key="register">Register </v-tab>
+                                </v-tabs>
+                                <v-tabs-items v-model="tab">
+                                    <v-tab-item :key="login">
+                                        <v-card flat>
+                                            <v-form ref="loginFormControl" lazy-validation>
+                                                <v-text-field v-model="loginForm.id" :rules="loginForm.idRules"
+                                                    label="UserId" required></v-text-field>
+                                                <v-text-field v-model="loginForm.password" type="password"
+                                                    :rules="loginForm.passwordRules" label="password" required>
+                                                </v-text-field>
+
+                                                <v-btn @click="loginFormLogin" color="success">
+                                                    login
+                                                </v-btn>
+                                                <v-btn @click="forgotPassword">
+                                                    forgot password
+                                                </v-btn>
+                                            </v-form>
+                                        </v-card>
+                                    </v-tab-item>
+                                    <v-tab-item :key="register">
+                                        <v-card flat>
+                                            <v-form ref="registerFormControl" lazy-validation>
+                                                <v-container>
+                                                    <v-row align="center">
+                                                        <v-col cols="4">
+                                                            <v-text-field ref="registerFormUserIdControl"
+                                                                v-model="registerForm.id" :rules="registerForm.idRules"
+                                                                label="UserId" required>
+                                                            </v-text-field>
+                                                        </v-col>
+                                                        <v-col cols="4">
+                                                            <v-btn small
+                                                                :color="registerForm.isUserIdAvaliable? 'success':'error'"
+                                                                :loading="userIdAvaliableChecking"
+                                                                :disabled="!(this.$refs.registerFormUserIdControl && this.$refs.registerFormUserIdControl.valid)"
+                                                                @click="checkUserIdAvaliability($event)">
+                                                                ${registerForm.isUserIdAvaliable? 'Check':
+                                                                'Try again'}
+                                                            </v-btn>
+                                                        </v-col>
+                                                        <v-col cols="4">
+                                                            <v-checkbox v-model="userIdAvaliableCheckBox"
+                                                                :ripple="false" label='avaliable' readonly>
+                                                            </v-checkbox>
+                                                        </v-col>
+                                                    </v-row>
+                                                    <v-row>
+                                                        <v-col>
+                                                            <v-text-field v-model="registerForm.name"
+                                                                :rules="registerForm.nameRules" label="Name" required>
+                                                            </v-text-field>
+                                                        </v-col>
+                                                    </v-row>
+                                                    <v-row>
+                                                        <v-col>
+                                                            <v-text-field v-model="registerForm.email"
+                                                                :rules="registerForm.emailRules" label="E-mail"
+                                                                required>
+                                                            </v-text-field>
+                                                        </v-col>
+                                                    </v-row>
+                                                    <v-row>
+                                                        <v-col>
+                                                            <v-text-field v-model="registerForm.password"
+                                                                type="password" :rules="registerForm.passwordRules"
+                                                                label="password" required>
+                                                            </v-text-field>
+                                                        </v-col>
+                                                    </v-row>
+                                                    <v-row>
+                                                        <v-col>
+                                                            <v-text-field v-model="registerForm.password2"
+                                                                type="password" :rules="registerForm.password2Rules"
+                                                                label="confirm password" required>
+                                                            </v-text-field>
+                                                        </v-col>
+                                                    </v-row>
+                                                    <v-row>
+                                                        <v-btn @click="registerFormSubmit" color="success">
+                                                            register
+                                                        </v-btn>
+                                                    </v-row>
+                                                </v-container>
+                                            </v-form>
+                                        </v-card>
+                                    </v-tab-item>
+                                </v-tabs-items>
+                            </v-container>
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-spacer></v-spacer>
+                            <v-btn color="blue darken-1" text @click="shouldShowLoginForm = false">
+                                Close
+                            </v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+                {% endif %}
+            </v-app-bar>
+            {% if session['user'] %}
+            <v-menu v-if="menu" inset ref="shepherd-layoutNavigation" :close-on-content-click="false" top offset-y
+                eager>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn color="success" v-bind="attrs" v-on="on"
+                        style="z-index: 1000; position: fixed; left:12px; bottom:0">
+                        Menu
+                    </v-btn>
+                </template>
+                <v-sheet style="max-height: 70vh; overflow-y: scroll">
+                    <v-list style="min-height: 70vh" nav dense>
+                        <div ref="shepherd-layoutNavigationRoleGroup">
+                            <v-list-group v-for="LG in KCube.navigationListGroup"
+                                :value="KCube.currentBlueprint == LG.name" :prepend-icon="LG.icon">
+                                <template v-slot:activator>
+                                    <v-list-item-title>${LG.title}</v-list-item-title>
+                                </template>
+                                <draggable v-model="LG.list" :group="{name:'url', pull: 'clone', put: false}"
+                                    :sort="false">
+                                    <v-list-item v-for="L in LG.list" link :href="L.url">
+                                        <v-list-item-icon>
+                                            <v-icon>${L.icon}</v-icon>
+                                        </v-list-item-icon>
+                                        <v-list-item-title>${L.title}</v-list-item-title>
+                                    </v-list-item>
+                                </draggable>
+                            </v-list-group>
+                            <v-divider></v-divider>
+                        </div>
+                        <v-list-item link href="{{ url_for('index') }}" ondragstart="event.preventDefault()">
+                            <v-list-item-icon>
+                                <v-icon>device_hub</v-icon>
+                            </v-list-item-icon>
+                            <v-list-item-title>Homepage</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item link href="{{ url_for('comprehensive') }}" ondragstart="event.preventDefault()">
+                            <v-list-item-icon>
+                                <v-icon>hub</v-icon>
+                            </v-list-item-icon>
+                            <v-list-item-title>Comprehensive</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item link href="{{ url_for('job.bubble') }}" ondragstart="event.preventDefault()">
+                            <v-list-item-icon>
+                                <v-icon>work</v-icon>
+                            </v-list-item-icon>
+                            <v-list-item-title>Jobs</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item link
+                            href="https://forms.office.com/Pages/ResponsePage.aspx?id=YPc3j4exgUm4L-Xcb1vPRNTurS9MNvJPoBO4A5M58iVUNUwzTjVSMTlZUVpQVTNQWThXVzdUQ1ZDTi4u"
+                            target="_blank" rel="noreferrer noopener">
+                            <v-list-item-icon>
+                                <v-icon>assistant</v-icon>
+                            </v-list-item-icon>
+                            <v-list-item-title>Website feedback or <br> bug report</v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-sheet>
+            </v-menu>
+            {% endif %}
+            <v-snackbar style="z-index: 600;" v-model="errorSnackBar.show" timeout="-1">
+                ${ errorSnackBar.message }
+                <template v-slot:action="{ attrs }">
+                    <v-btn color="pink" text v-bind="attrs" @click="errorSnackBar.show = false">
+                        Close
+                    </v-btn>
+                </template>
+            </v-snackbar>
+            <v-snackbar style="z-index: 500;" v-model="completeSnackBar.show">
+                ${ completeSnackBar.message }
+                <template v-slot:action="{ attrs }">
+                    <v-btn color="blue" text v-bind="attrs" @click="completeSnackBar.show = false">
+                        Close
+                    </v-btn>
+                </template>
+            </v-snackbar>
+            <v-snackbar style="z-index: 650;" v-model="bePatientSnackBar.show" :timeout="2000">
+                A http request is already submitting in progress. Thank you for your patience.
+                <template v-slot:action="{ attrs }">
+                    <v-btn color="blue" text v-bind="attrs" @click="bePatientSnackBar.show = false">
+                        Close
+                    </v-btn>
+                </template>
+            </v-snackbar>
+            <v-snackbar style="z-index: 250;" v-model="actionSnackBar.show" timeout="-1">
+                ${ actionSnackBar.message }
+                <template v-slot:action="{ attrs }">
+                    <v-btn color="blue" text v-bind="attrs" @click="actionSnackBar.action()">
+                        ${actionSnackBar.actionName} </v-btn>
+                    <v-btn color="error" text v-bind="attrs" @click="actionSnackBar.show = false">
+                        Close
+                    </v-btn>
+                </template>
+            </v-snackbar>
+
+            </v-app-bar>
+            <v-main>
+                <app-content v-show="!atemptOidcLogin"></app-content>
+                <div v-if="atemptOidcLogin" style="height: 100%; position: absolute; overflow: hidden; width: 100%;">
+                    <v-progress-circular
+                        style="display: block; position: absolute; inset: 50% 50% 50% 50%; transform: translate(-50%,-50%);"
+                        indeterminate size="256">
+                    </v-progress-circular>
+                    <v-card-title style="height:256px; width: 256px; justify-content: center; align-items: center;
+                    position: absolute; inset: 50% 50% 50% 50%; transform: translate(-50%,-50%);">
+                        Attempting login
+                    </v-card-title>
+                </div>
+            </v-main>
+        </v-app>
+
+    </div>
+    <script>
+        KCube = {
+            colorTheme: {
+                primary: '#5D9C59',
+                secondary: '#E9A178',
+                accent: '#cddc39',
+                error: '#e91e63',
+                warning: '#ffeb3b',
+                info: '#00bcd4',
+                success: '#009688'
+            },
+            widgetName: [], // names of widget would be pushed into this array if the page is a dashboard
+            widgetOptions: {}, // array of object
+            visibility: ["private", "collaborator", "instructor", "colleague", "public"],
+            currentBlueprint: "{{ request.blueprint }}",
+            roleTab: [
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                {
+                    icon: "co_present",
+                    name: "instructor",
+                    tabs: [{
+                        title: "dashboard",
+                        icon: "dashboard",
+                        url: "{{ url_for('instructor.dashboard') }}",
+                    }, {
+                        title: "course list",
+                        icon: "grid_view",
+                        url: "{{ url_for('instructor.courseList') }}",
+                    }, {
+                        title: "Course Feedback",
+                        icon: "forum",
+                        url: "{{ url_for('collaborate.feedbacks') }}",
+                    }]
+                },
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role) %}
+                {
+                    icon: "groups",
+                    name: "DLTC",
+                    tabs: [{
+                        title: "dashboard",
+                        icon: "dashboard",
+                        url: "{{ url_for('DLTC.dashboard') }}",
+                    }, {
+                        title: "course list",
+                        icon: "grid_view",
+                        url: "{{ url_for('DLTC.courseList') }}",
+                    }, {
+                        title: "Course Feedback",
+                        icon: "forum",
+                        url: "{{ url_for('collaborate.feedbacks') }}",
+                    }]
+                },
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "student" in PERMISSION.role) %}
+                {
+                    icon: "school",
+                    name: "student",
+                    tabs: [{
+                        title: "dashboard",
+                        icon: "dashboard",
+                        url: "{{ url_for('student.dashboard') }}",
+                    }, {
+                        title: "Course Feedback",
+                        icon: "forum",
+                        url: "{{ url_for('collaborate.feedbacks') }}",
+                    }]
+                },
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and "admin" in PERMISSION.role %}
+                {
+                    icon: "admin_panel_settings",
+                    name: "admin",
+                    tabs: [{
+                        title: "dashboard",
+                        icon: "dashboard",
+                        url: "{{ url_for('admin.dashboard') }}",
+                    }]
+                },
+                //{% endif %}
+            ],
+            navigationListGroup: [
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                {
+                    icon: "co_present",
+                    name: "instructor",
+                    title: "Instructor's space",
+                    list: [{
+                            title: "Dashboard",
+                            icon: "dashboard",
+                            url: "{{ url_for('instructor.dashboard') }}",
+                        },
+                        {
+                            title: "Courses",
+                            icon: "grid_view",
+                            url: "{{ url_for('instructor.courseList') }}",
+                        },
+                        // {
+                        //     title: "Schedules",
+                        //     icon: "event_note",
+                        //     url: "{{ url_for('instructor.schedule') }}",
+                        // },
+                        {
+                            title: "Create New Course",
+                            icon: "library_add",
+                            url: "{{ url_for('instructor.courseForm') }}",
+                        },
+                        {
+                            title: "Upload Course Icon",
+                            icon: "upload",
+                            url: "{{ url_for('instructor.uploadImage') }}",
+                        },
+                        {
+                            title: "Disambiguate graph concept",
+                            icon: "change_circle",
+                            url: "{{ url_for('instructor.disambiguation') }}",
+                        },
+                    ]
+                },
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role) %}
+                {
+                    icon: "groups",
+                    name: "DLTC",
+                    title: "DLTC",
+                    list: [{
+                            title: "Dashboard",
+                            icon: "dashboard",
+                            url: "{{ url_for('DLTC.dashboard') }}",
+                        },
+                        {
+                            title: "Manage Courses",
+                            icon: "grid_view",
+                            url: "{{ url_for('DLTC.courseList') }}",
+                        },
+                        {
+                            title: "Create New Course",
+                            icon: "library_add",
+                            url: "{{ url_for('DLTC.courseForm') }}",
+                        },
+                        {
+                            title: "Upload Course Icon",
+                            icon: "upload",
+                            url: "{{ url_for('DLTC.uploadImage') }}",
+                        },
+                    ]
+                },
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "student" in PERMISSION.role) %}
+                {
+                    icon: "school",
+                    name: "student",
+                    title: "Student",
+                    list: [{
+                        title: "Dashboard",
+                        icon: "dashboard",
+                        url: "{{ url_for('student.dashboard') }}",
+                    }, ]
+                },
+                //{% endif %}
+                /*{% if PERMISSION 
+                and (PERMISSION.canGiveFeedback or PERMISSION.canReplyFeedback or PERMISSION.canProposeRelationship)
+                 or ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                */
+                {
+                    icon: "connect_without_contact",
+                    name: "collaborate",
+                    title: "Collaborate",
+                    list: [
+                        //{% if PERMISSION and (PERMISSION.canGiveFeedback or PERMISSION.canReplyFeedback) %}
+                        {
+                            title: "Course Feedback",
+                            icon: "forum",
+                            url: "{{ url_for('collaborate.feedbacks') }}",
+                        },
+                        //{% endif %}
+                        //{% if PERMISSION and PERMISSION.canProposeRelationship %}
+                        {
+                            title: "Graph Editing",
+                            icon: "linear_scale",
+                            url: "{{ url_for('collaborate.graphEditing') }}",
+                        },
+                        //{% endif %}
+                        /*{% if PERMISSION and PERMISSION.role and 
+                        ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                        */
+                        {
+                            title: "Catalogue Navigation",
+                            icon: "polyline",
+                            url: "{{ url_for('collaborate.metagraph') }}",
+                        },
+                        //{% else %}
+                        //*/
+                        //{% endif %}
+                    ]
+                },
+                //{% else %}
+                //*/
+                //{% endif %}
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role) %}
+                {
+                    icon: "admin_panel_settings",
+                    name: "admin",
+                    title: "Admin",
+                    list: [{
+                            title: "Dashboard",
+                            icon: "dashboard",
+                            url: "{{ url_for('admin.dashboard') }}",
+                        },
+                        {
+                            title: "User & Role",
+                            icon: "manage_accounts",
+                            url: "{{ url_for('admin.user_n_role') }}",
+                        },
+                    ]
+                },
+                //{% endif %}
+            ]
+        }
+        KCube_initialize = () => {
+            if (KCube.currentBlueprint == "None" && KCube.navigationListGroup.length > 0) {
+                KCube.currentBlueprint = KCube.navigationListGroup[0].name
+            }
+            KCube.view = KCube.roleTab.map(t => t.name).includes(KCube.currentBlueprint) ? KCube.currentBlueprint :
+                localStorage.getItem('lastView')
+            localStorage.setItem('lastView', KCube.view)
+            if (KCube.roleTab.length > 0) {
+                // initialize values
+                KCube.tabs = KCube.roleTab.filter(r => r.name == KCube.view).length > 0 ? KCube.roleTab
+                    .filter(r => r.name == KCube.view)[0].tabs : KCube.roleTab[0].tabs;
+                KCube.currentTabIndex = KCube.tabs.map((_, i) => i).filter(
+                    i => KCube.tabs[i].url == window.location.pathname)[0]
+
+                if (KCube.currentTabIndex != undefined) {
+                    // hide roleTab item if they don't have page with title same as current page
+                    KCube.currentTabName = KCube.currentTabIndex != undefined ? KCube.tabs[KCube.currentTabIndex]
+                        .title : undefined
+                    KCube.roleTab = KCube.roleTab.filter(r => r.tabs.filter(t => t.title == KCube.currentTabName)
+                        .length > 0)
+                }
+            }
+        }
+        KCube_initialize()
+        Vue.use(Vuetify)
+        Vue.use(VueShepherd)
+    </script>
+    <script type="text/x-template" id="content">
+        {% block VueComponent %} {% endblock %}
+    </script>
+    {% block VueComponentScript %} {% endblock %}
+    <script>
+        var app = new Vue({
+            el: '#nav',
+            data: () => ({
+                atemptOidcLogin: new URLSearchParams(window.location.search).get('client-request-id') !=
+                    null,
+                appBar: new URLSearchParams(window.location.search).get('bar') === "false" || window
+                    .location !== window.parent.location ? false : true,
+                menu: new URLSearchParams(window.location.search).get('bar') === "false" || window
+                    .location !== window.parent.location ? false : true,
+                KCube: KCube,
+                tabIndex: KCube.currentTabIndex,
+                miniSync: false,
+                navHover: false,
+                errorSnackBar: {
+                    show: false,
+                    message: ''
+                },
+                completeSnackBar: {
+                    show: false,
+                    message: ''
+                },
+                actionSnackBar: {
+                    show: false,
+                    message: '',
+                    actionName: '',
+                    action: () => {}
+                },
+                bePatientSnackBar: {
+                    show: false
+                },
+                progress: {
+                    show: false
+                },
+                shouldShowLoginForm: false,
+                tab: 'register',
+                login: 'login',
+                register: 'register',
+                userIdAvaliableCheckBox: false,
+                userIdAvaliableChecking: false,
+                registerForm: {
+                    isUserIdAvaliable: true,
+                    id: '',
+                    idRules: [
+                        v => !!v || 'UserId is required',
+                        v => (v && v.length > 3 && v.length < 101) ||
+                        'UserId should be anything between 4 and 100 charactors',
+                        v => (v && /^[a-zA-Z0-9]{4,100}$/.test(v)) ||
+                        'UserId can only contains alphanumeric characters.',
+                        v => (v && /{{regExpRules["userId"]}}/.test(v)) ||
+                        'UserId must start with alphabetic characters.'
+                    ],
+                    name: '',
+                    nameRules: [
+                        v => !!v || 'Name is required',
+                        v => (v && v.length > 3 && v.length < 101) ||
+                        'Name should be anything between 4 and 100 charactors',
+                        v => (v && /{{regExpRules["userName"]}}/.test(v)) ||
+                        'Name can only contains alphanumeric characters and space.'
+                    ],
+                    email: '',
+                    emailRules: [
+                        v => !!v || 'E-mail is required',
+                        v => (v && v.length < 320) ||
+                        'A valid email should have less then 320 characters',
+                        v => (v && /{{regExpRules["email"]}}/.test(v)) ||
+                        'E-mail must be in valid format',
+                    ],
+                    password: '',
+                    passwordRules: [
+                        v => !!v || 'Password is required',
+                    ],
+                    password2: '',
+                    password2Rules: [
+                        v => !!v || 'Password is required',
+                        v => (v && v == app._data.registerForm.password) ||
+                        'Two password are different'
+                    ],
+                },
+                loginForm: {
+                    id: '',
+                    idRules: [
+                        v => !!v || 'UserId is required',
+                        v => (v && v.length > 3 && v.length < 101) ||
+                        'UserId should be anything between 4 and 100 charactors',
+                        v => (v && /^[a-zA-Z0-9]{4,100}$/.test(v)) ||
+                        'UserId can only contains alphanumeric characters.',
+                        v => (v && /{{regExpRules["userId"]}}/.test(v)) ||
+                        'UserId must start with alphabetic characters.'
+                    ],
+                    password: '',
+                    passwordRules: [
+                        v => !!v || 'Password is required',
+                    ],
+                },
+                pageIntro: null,
+            }),
+            methods: {
+                checkUserIdAvaliability(btn) {
+                    console.log(btn)
+                    this.userIdAvaliableChecking = true
+                    if (this.$refs.registerFormUserIdControl.valid) {
+                        fetch("{{ url_for('user.isUserIdAvaliable') }}?userId=" +
+                                this.$refs.registerFormUserIdControl.value, {
+                                    method: 'GET',
+                                    cache: 'no-store',
+                                })
+                            .then(response => response.json())
+                            .then(body => {
+                                this.registerForm.isUserIdAvaliable = body.avaliable
+                                this.userIdAvaliableChecking = false
+                                if (body.avaliable) {
+                                    this.userIdAvaliableCheckBox = true
+                                } else {
+                                    this.userIdAvaliableCheckBox = false
+                                }
+                            })
+                    }
+                },
+                registerFormSubmit() {
+                    if (this.$refs.registerFormControl.validate()) {
+                        this.progress.show = true
+                        fetch("{{ url_for('user.register') }}", {
+                                method: 'POST',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    userId: this.registerForm.id,
+                                    password: this.registerForm.password,
+                                    email: this.registerForm.email,
+                                    userName: this.registerForm.name
+                                })
+                            })
+                            .then(response => {
+                                try {
+                                    return response.json()
+                                } catch {
+                                    this.$root.progress.show = false
+                                    this.$root.errorDisplay({},
+                                        'Unexpected error occured.')
+                                }
+                            })
+                            .then(body => {
+                                this.progress.show = false
+                                this.responseSnackBar(body, 'Registration failed for unknown reason.',
+                                    location.reload.bind(window.location))
+                            })
+
+                    }
+                },
+                forgotPassword() {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('user.forgotPassword') }}", {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                userId: this.loginForm.id,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Request failed for unknown reason.')
+                        })
+                },
+                loginFormLogin() {
+                    if (this.$refs.loginFormControl.validate()) {
+                        this.progress.show = true
+                        fetch("{{ url_for('user.login') }}", {
+                                method: 'POST',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    userId: this.loginForm.id,
+                                    password: this.loginForm.password
+                                })
+
+                            })
+                            .then(response => {
+                                try {
+                                    return response.json()
+                                } catch {
+                                    this.$root.progress.show = false
+                                    this.$root.errorDisplay({},
+                                        'Unexpected error occured.')
+                                }
+                            })
+                            .then(body => {
+                                this.progress.show = false
+                                this.responseSnackBar(body, 'incorrect username or password', () => {
+                                    if (body.success) {
+                                        if (body.url) window.location.href = body.url
+                                    } else {
+                                        window.location.reload()
+                                    }
+                                })
+                            })
+                    }
+                },
+                responseSnackBar(body, defaultMessage, onSuccess = () => {}) {
+                    if (body.success) {
+                        if (body.message) {
+                            this.completeSnackBar.message = body.message
+                        } else {
+                            this.completeSnackBar.message = 'success'
+                        }
+                        this.completeSnackBar.show = true
+                        onSuccess()
+                    } else {
+                        this.errorDisplay(body, defaultMessage)
+                    }
+                },
+                errorDisplay(body, defaultMessage) {
+                    if (body.message) {
+                        this.errorSnackBar.message = body.message
+                        this.errorSnackBar.show = true
+                    } else {
+                        this.errorSnackBar.message = defaultMessage
+                        this.errorSnackBar.show = true
+                    }
+                    if (body.error) {
+                        console.error(body.error)
+                    }
+
+                },
+                actionDisplay(message, actionName, action) {
+                    this.actionSnackBar.message = message
+                    this.actionSnackBar.action = action
+                    this.actionSnackBar.actionName = actionName
+                    this.actionSnackBar.show = true
+
+                },
+                switchRole(role) {
+                    role = KCube.roleTab.filter(r => r.name == role)[0]
+                    tab = role.tabs[this.tabIndex]
+                    window.location.href = tab ? tab.url : role.tabs[0].url
+                },
+                customizedFetch(resources, options, errorHandler = () => {}) {
+                    return fetch(resources, options)
+                        .catch(error => {
+                            this.progress.show = false
+                            errorHandler(error);
+                            if (error instanceof TypeError) {
+                                this.errorDisplay({
+                                        success: false
+                                    },
+                                    "Network error occured.")
+                            } else {
+                                this.errorDisplay({
+                                        success: false
+                                    },
+                                    error.message)
+                            }
+                            throw error
+                        })
+                },
+                appIntro() {
+                    this._tour = this.$shepherd({
+                        useModalOverlay: true,
+                        defaultStepOptions: {
+                            classes: 'shadow-md bg-purple-dark',
+                            cancelIcon: {
+                                enabled: true
+                            },
+                            canClickTarget: false,
+                            buttons: [{
+                                text: 'Next',
+                                action: () => this._tour.next()
+                            }],
+                        }
+                    })
+                    if (this.$refs["shepherd-layoutTab"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-layoutTab"].$el,
+                                on: 'bottom'
+                            },
+                            text: 'These tabs bring you to commonly used page of our website',
+
+                        })
+                    }
+                    if (this.$refs["shepherd-roleSelect"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-roleSelect"].$el,
+                                on: 'bottom'
+                            },
+                            text: 'If you have multiple user role, you mean view the same page from different persepctive.',
+
+                        })
+                    }
+                    if (this.$refs["shepherd-layoutNavigation"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-layoutNavigation"].$el,
+                                on: 'right'
+                            },
+                            text: 'All page of our website are listed here. (You may expand menu by move your cursor over this region)',
+                            canClickTarget: true,
+                        })
+                    }
+                    if (this.$refs["shepherd-layoutNavigationRoleGroup"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-layoutNavigationRoleGroup"],
+                                on: 'right'
+                            },
+                            text: 'Pages avaliable to specific user group are listed here.',
+                        })
+                    }
+                    if (this.$refs["shepherd-layoutNavigationToggle"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-layoutNavigationToggle"].$el,
+                                on: 'right'
+                            },
+                            text: 'You may hide the menu (or unhide) by click this.',
+                            canClickTarget: true,
+                            beforeShowPromise: () =>
+                                new Promise((resolve, reject) => {
+                                    this.miniSync = false
+                                    this.$refs["shepherd-layoutNavigationToggle"].$el.dispatchEvent(
+                                        new MouseEvent("click"))
+                                    setTimeout(() => {
+                                        resolve();
+                                    }, 100);
+                                }),
+                        })
+                    }
+                    if (this.$refs["shepherd-userMenu"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-userMenu"].$el,
+                                on: 'bottom'
+                            },
+                            text: 'You may check and modify your account in this menu.',
+
+                        })
+                    }
+                    if (this.$refs["shepherd-userProfile"]) {
+                        this._tour.addStep({
+                            attachTo: {
+                                element: this.$refs["shepherd-userProfile"].$el,
+                                on: 'left'
+                            },
+                            text: 'You may check and modify your profile here.<br>Make sure you verify your email account, if you would like to acquire priveledge.',
+                            beforeShowPromise: () =>
+                                new Promise((resolve, reject) => {
+                                    this.$refs["shepherd-userMenu"].$el.dispatchEvent(
+                                        new MouseEvent("click"))
+
+                                    setTimeout(() => {
+                                        resolve();
+                                    }, 100);
+                                }),
+                        })
+                    }
+                    this._tour.start();
+                    this._tour.on("complete", function () {
+                        localStorage.setItem('layoutToured', true)
+                    })
+                },
+            },
+            delimiters: ['${', '}'],
+            vuetify: new Vuetify(),
+            mounted() {
+                this.$vuetify.theme.themes.light = KCube.colorTheme
+                if (window.location == window.parent.location &&
+                    (!localStorage.getItem('layoutToured') || (this.pageIntro && !localStorage
+                        .getItem("{{request.endpoint}}Toured")))) {
+                    let counter = 0
+                    let interval = setInterval(() => {
+                        if (!localStorage.getItem('layoutToured') || (this.pageIntro && !localStorage
+                                .getItem("{{request.endpoint}}Toured"))) {
+                            let flash = (ref) => {
+                                let el = this.$refs[ref].$el
+                                el.scrollIntoView({
+                                    behavior: "smooth",
+                                    block: "center"
+                                })
+                                let ev = new Event("mousedown")
+                                let offset = el.getBoundingClientRect()
+                                ev.clientX = offset.left + 1
+                                ev.clientY = offset.top + 1
+                                el.dispatchEvent(ev)
+                                this.$nextTick(function () {
+                                    el.dispatchEvent(new Event("mouseup"))
+                                })
+                            }
+                            flash("shepherd-help")
+                            if (!localStorage.getItem('layoutToured')) flash(
+                                "shepherd-appIntro")
+                            if (this.pageIntro && !localStorage
+                                .getItem("{{request.endpoint}}Toured"))
+                                flash("shepherd-pageIntro")
+                            if (counter < 10) {
+                                counter++
+                            } else {
+                                clearInterval(interval)
+
+                            }
+                        } else {
+                            clearInterval(interval)
+                        }
+                    }, 500)
+                }
+                let query_params = new URLSearchParams(window.location.search)
+                if (query_params.get('oidcError')) this.errorDisplay({}, query_params.get('oidcError'));
+                if (query_params.get('client-request-id')) {
+                    fetch("{{ url_for('user.login') }}", {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                authorization_response: query_params + window.location.hash
+                            })
+
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.atemptOidcLogin = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.responseSnackBar(body, 'incorrect username or password', () => {
+                                if (body.success) {
+                                    if (body.url) window.location.href = body.url
+                                } else {
+                                    this.atemptOidcLogin = false
+                                    this.$root.errorDisplay(body,
+                                        'Unexpected error occured.')
+                                }
+                            })
+                        })
+
+                }
+            }
+        })
+    </script>
+    {% macro echartsCDN() %}
+    <script src="https://cdn.jsdelivr.net/npm/@vue/composition-api@1.0.5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.1.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue-echarts@6.0.0"></script>
+    {% endmacro %}
+    {% macro visCDN() %}
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    {% endmacro %}
+    {% macro cytoscapeCDN() %}
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.20.0/cytoscape.umd.js">
+    </script>
+    <script src="https://unpkg.com/webcola/WebCola/cola.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/cytoscape-cola@2.5.1/cytoscape-cola.js">
+    </script>
+    {% endmacro %}
+    {% macro vueGridLayout() %}
+    <script src="{{ url_for('static', filename='lib/vue-grid-layout.umd.js') }}"></script>
+    {% endmacro %}
+
+    {% block body %}{% endblock %}
+
+</body>
+
+
+</html>

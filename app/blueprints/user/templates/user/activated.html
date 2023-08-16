@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+<v-card-title>Your account is now activated.</v-card-title>
+<v-btn color="success" href="{{url}}">start browsing</v-btn>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

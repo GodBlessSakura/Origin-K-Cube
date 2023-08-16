@@ -1,0 +1,261 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-card style="height: 100%; width: 100%;">
+    <div id="cy" style="height: 100%; width: 100%;"></div>
+    <v-bottom-sheet v-model="metricsBottomSheet" insert :hide-overlay="true" no-click-animation>
+        <kcube-metrics-visualize-bottom-sheet></kcube-metrics-visualize-bottom-sheet>
+    </v-bottom-sheet>
+    <v-tooltip top>
+        <template v-slot:activator="{ on, attrs }">
+            <v-btn absolute style="bottom:3vh;left:3vh" fab v-on="on" @click="metricsBottomSheet = true">
+                <v-icon>insights</v-icon>
+            </v-btn>
+        </template>
+        centrality metrics
+    </v-tooltip>
+    <v-dialog max-width="700px">
+        <template v-slot:activator="{ on: menu, attrs }">
+            <v-tooltip top>
+                <template v-slot:activator="{ on: tooltip }">
+                    <v-btn absolute style="bottom:3vh;left:12vh" fab v-bind="attrs" v-on="{ ...tooltip, ...menu }">
+                        <v-icon>palette</v-icon>
+                    </v-btn>
+                </template>
+                graph<br>display<br>options
+            </v-tooltip>
+        </template>
+        <kcube-cy-options-dialog></kcube-cy-options-dialog>
+    </v-dialog>
+    {% if PERMISSION and PERMISSION.role and "instructor" in PERMISSION.role %}
+    <v-tooltip top>
+        <template v-slot:activator="{ on, attrs }">
+            <v-btn absolute style="bottom:3vh;left:21vh" fab v-on="on"
+                href="{{ url_for('instructor.repositories', courseCode = courseCode) }}">
+                <v-icon>table_view</v-icon>
+            </v-btn>
+        </template>
+        repositories
+    </v-tooltip>
+    {% endif %}
+    {% if userId %}
+    <v-tooltip top>
+        <template v-slot:activator="{ on, attrs }">
+            <v-btn absolute style="bottom:3vh;left:30vh" fab v-on="on"
+                href="{{ url_for('coursePlan', courseCode = courseCode, userId = userId) }}">
+                <v-icon>calendar_today</v-icon>
+            </v-btn>
+        </template>
+        course plan
+    </v-tooltip>
+    {% endif %}
+    <v-dialog v-model="entityDialogue" content-class="entityPage" transition="slide-x-reverse-transition"
+        hide-overlay persistent no-click-animation>
+        <iframe ref="iframe" style="height: 100%; width:100%" frameBorder="0"
+            src="{{ url_for('concept', courseCode = courseCode)}}"></iframe>
+    </v-dialog>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<style>
+    .entityPage {
+        height: 100vh;
+        padding: unset;
+        right: 0px;
+        width: 30vw;
+        max-height: unset !important;
+        position: absolute;
+        right: 0px;
+        margin: unset;
+        overflow-x: clip;
+    }
+</style>
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<script>
+    cy = cytoscape({
+        style: cyStyles.simpleStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    })
+    cytoscapeInstance = [{
+        cy: cy,
+        edgeSelector: "[value = 'true']",
+        options: "simpleStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: 64,
+        edgeElasticity: 128,
+        gravity: 0.15,
+        numIter: 750,
+        initialTemp: 2000,
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name + '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({
+            metricsBottomSheet: false,
+            entityDialogue: true,
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                    "{{ url_for('RESTful.triple.getCourse', courseCode = courseCode, userId = userId) }}", {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.course && body.triples) {
+                            let visited = JSON.parse(localStorage.getItem('visitedCourseGraph'))
+                            if (!visited) {
+                                visited = {}
+                            }
+                            visited["{{courseCode}}" + "_" + "{{userId}}"] = location.href
+                            console.log(JSON.stringify(visited))
+                            localStorage.setItem('visitedCourseGraph', JSON.stringify(visited))
+                            cy.add(nodeFactory('{{ courseCode }}', ["course"]))
+                                .data(
+                                    'imageURL',
+                                    body.course.imageURL,
+                                ).data('name', body.course.diaplsyName)
+                            body.triples.forEach(triple => {
+                                if (triple.r_value) {
+                                    [triple.h_name, triple.t_name].forEach(
+                                        name => {
+                                            if (cy.getElementById(name).length == 0) {
+                                                cy.add(nodeFactory(name))
+                                            }
+                                        })
+                                    cy.add(edgeFactory(triple))
+                                }
+                            })
+                            cy.elements().style('visibility', 'hidden')
+
+                            let cyLayout = cy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return cyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            cyLayout.one('layoutstop', function () {
+                                let initOption = { ...coseLayoutOptions }
+                                initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                                initOption.numIter = Math.floor(initOption.numIter / 4)
+                                initOption.animate = false
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    let initOption = { ...coseLayoutOptions }
+                                    initOption.animate = false
+                                    cyLayout = cy.layout(initOption)
+                                    cyLayout.one('layoutstop', () => {
+                                        cy.elements().style('visibility', 'visible')
+                                    })
+                                    cyLayout.run()
+                                })
+                                cyLayout.run()
+                            })
+                            cyLayout.run()
+                        } else {
+                            let visited = JSON.parse(localStorage.getItem('visitedCourseGraph'))
+                            if (!visited) {
+                                visited = {}
+                            }
+                            delete visited["{{courseCode}}" + "_" + "{{userId}}"]
+                            console.log(JSON.stringify(visited))
+                            localStorage.setItem('visitedCourseGraph', JSON.stringify(visited))
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+            },
+            newTab(keyword) {
+                this.entityDialogue = true
+                this.$nextTick(function () {
+                    this.$refs.iframe.contentWindow.postMessage(keyword, '*')
+                })
+                //let w = window.open(url, '_blank')
+            }
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            self = this
+            this.$nextTick(function () {
+                this.entityDialogue = false
+            })
+            cy.on('tap', 'node', (event) => {
+                if (event.target == event.cy) return
+                this.newTab(event.target[0].data('id'))
+            })
+            document.body.addEventListener("mouseup", (event) => {
+                console.log("click")
+                self.entityDialogue = false
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

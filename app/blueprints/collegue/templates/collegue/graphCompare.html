@@ -1,0 +1,624 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-container dense style="height: calc(100vh - 64px); width: calc(100vw - 50px); margin: 0; max-width: none;">
+    {% if readOnly %}
+    <v-row dense style="width: 100%;" v-if="overwriter?.labels.includes('Branch') && overwriter?.isOwner">
+        <v-col>
+            <v-form dense ref="control">
+                <v-select dense v-model="visibility" :items="greaterVisibility" :disabled="!overwriter?.isOwner"
+                    label="Filled style">
+                </v-select>
+            </v-form>
+        </v-col>
+        <v-col>
+            <v-btn block @click="proceeded = true" v-if="!proceeded" :disabled="!overwriter?.isOwner">
+                update
+            </v-btn>
+            <v-btn block v-if="proceeded">
+                this may also affect visibility of predecessor &nbsp; &nbsp;
+                <v-btn @click="update()" :disabled="!overwriter?.isOwner">
+                    ${confirmed?'update':'confirm'}
+                </v-btn>
+            </v-btn>
+        </v-col>
+    </v-row>
+    {% else %}
+    <v-row dense style="width: 100%;">
+        <v-col>
+            <v-form dense ref="control">
+                <v-text-field dense v-model="tag" :rules="tagRules" label="tag for new version" required
+                    :disabled=isTrival>
+                </v-text-field>
+            </v-form>
+        </v-col>
+        <v-col>
+            <v-select dense v-model="action" :items="options" :disabled='isTrival || options.length == 0'
+                label="Filled style">
+            </v-select>
+        </v-col>
+        <v-col dense style="text-align: center;">
+            <v-btn block @click="submit()" :disabled=isTrival>
+                ${isTrival?'no meaningful edge update was found':'submit'}
+            </v-btn>
+        </v-col>
+    </v-row>
+    {% endif %}
+    <v-row dense style="width: 100%;">
+        <v-col cols="auto" dense>
+            <v-btn @click="fit()">
+                <v-icon>
+                    fit_screen
+                </v-icon>
+            </v-btn>
+        </v-col>
+        <v-col cols="auto" dense>
+            <v-menu offset-y>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn style="text-transform: none;" v-bind="attrs" v-on="on" tile>
+                        visualization
+                    </v-btn>
+                </template>
+                <v-list>
+                    <!-- <v-list-item @click="edgeStyleDialogue = true">
+                        <v-list-item-title>edge style<br>option</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>settings</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item> -->
+                    <v-list-item @click="metricsBottomSheet = true">
+                        <v-list-item-title>centrality<br>metrics</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>insights</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                </v-list>
+            </v-menu>
+        </v-col>
+        <v-col cols="auto" dense>
+            <v-menu offset-y>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn style="text-transform: none;" v-bind="attrs" v-on="on" tile>
+                        export
+                    </v-btn>
+                </template>
+                <v-list v-if="overwriter_triples">
+                    <v-list-item @click="downloadPNG()">
+                        <v-list-item-title>graph capture</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>photo_camera</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                    <v-list-item @click="copyJson()">
+                        <v-list-item-title>json</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>content_copy</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                    <v-list-item @click="copyCsv()">
+                        <v-list-item-title>csv</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>content_copy</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                    <v-list-item @click="downloadJson()">
+                        <v-list-item-title>json</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>download</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                    <v-list-item @click="downloadCsv()">
+                        <v-list-item-title>csv</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>download</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item>
+                </v-list>
+            </v-menu>
+        </v-col>
+        <v-col cols="auto" dense>
+            <v-menu offset-y>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn style="text-transform: none;" v-bind="attrs" v-on="on" tile>
+                        settings
+                    </v-btn>
+                </template>
+                <v-list>
+                    <v-dialog max-width="700px">
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-list-item v-bind="attrs" v-on="on">
+                                <v-list-item-title>graph<br>display<br>options</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>palette</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </template>
+                        <kcube-cy-options-dialog></kcube-cy-options-dialog>
+                    </v-dialog>
+                </v-list>
+            </v-menu>
+        </v-col>
+    </v-row>
+    <v-row dense style="height: 90%; width: 100%;">
+        <v-col dense style="height: 100%">
+            <v-card style="height: 100%; width: 100%;">
+                <v-container dense style="height: 100%; width: 100%;">
+                    <v-row dense>
+                        <v-col dense style="text-align: center;">
+                            {% if readOnly %}
+                            Target graph - ${overwritee?.tag} (${overwritee?.labels?.join(', ')})
+                            {% else %}
+                            Original graph - ${overwritee?.tag} (${overwritee?.labels?.join(', ')})
+                            {% endif %}
+                        </v-col>
+                    </v-row>
+                    <v-row dense style="height: calc(100% - 32px); width: 100%;">
+                        <div id="subject" style="height: 100%; width: 100%;"></div>
+                    </v-row>
+                </v-container>
+            </v-card>
+        </v-col>
+        <v-col dense style="height: 100%">
+            <v-card style="height: 100%; width: 100%;">
+                <v-container dense style="height: 100%; width: 100%;">
+                    <v-row dense>
+                        <v-col dense style="text-align: center;">
+                            {% if readOnly %}
+                            Resulting Graph - ${overwriter?.tag} (${overwriter?.labels?.join(', ')})
+                            {% else %}
+                            Update preview - ${overwriter?.tag} (${overwriter?.labels?.join(', ')})
+                            {% endif %}
+                        </v-col>
+                    </v-row>
+                    <v-row dense style="height: calc(100% - 32px); width: 100%;">
+                        <div id="preview" style="height: 100%; width: 100%;"></div>
+                    </v-row>
+                </v-container>
+            </v-card>
+        </v-col>
+    </v-row>
+    <v-bottom-sheet v-model="metricsBottomSheet" insert :hide-overlay="true" no-click-animation>
+        <kcube-metrics-visualize-bottom-sheet></kcube-metrics-visualize-bottom-sheet>
+    </v-bottom-sheet>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<script>
+    previewCyOption = {
+        style: cyStyles.previewStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+        autounselectify: true
+    }
+    subjectCyOption = {
+        style: cyStyles.subjectStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+        autounselectify: true
+    }
+    previewCy = cytoscape(previewCyOption)
+    subjectCy = cytoscape(subjectCyOption)
+    cytoscapeInstance = [{
+        cy: previewCy,
+        edgeSelector: "[original_value= 'true'][preview_value != 'false'],[preview_value = 'true']",
+        options: "previewStyle"
+    }, {
+        cy: subjectCy,
+        edgeSelector: "[original_value= 'true']",
+        options: "subjectStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+    }
+    concentricLayoutOptions = {
+        name: 'concentric',
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: function (edge) {
+            return 64;
+        },
+        edgeElasticity: function (edge) {
+            return 128;
+        },
+        gravity: 0.15
+
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+            pannable: true,
+        }
+        return output
+    }
+
+    function previewEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                preview_value: edge.r_value ? 'true' : 'false',
+                original_value: 'undefined',
+            }
+        }
+        return output
+
+    }
+
+    function originalEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                preview_value: 'undefined',
+                original_value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+
+        return h_name + '.' + r_name + '.' + t_name
+    }
+
+    Vue.component('app-content', {
+        data: () => ({
+            overwriter_triples: null,
+            overwriterLabels: [],
+            tag: '',
+            tagRules: [v => !!v || 'Tag is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Tag should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            options: [],
+            action: [],
+            isTrival: false,
+            overwriter: null,
+            overwritee: null,
+            visibility: '',
+            greaterVisibility: [],
+            proceeded: false,
+            confirmed: false,
+            metricsBottomSheet: false,
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let graphPromise = fetch(
+                        "{{ url_for('RESTful.graph.get_compare', overwriterId=overwriterId, overwriteeId=overwriteeId) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.overwriter && body.overwriter_triples && body.overwritee && body
+                            .overwritee_triples) {
+                            this.overwriter_triples = body.overwriter_triples
+                            this.overwriter = body.overwriter
+                            this.overwritee = body.overwritee
+
+                            //{% if readOnly %}
+                            if (body.overwriter.labels.includes('Branch')) {
+                                this.visibility = KCube.visibility[body.overwriter.visibility]
+                                this.greaterVisibility = KCube.visibility.slice(body.overwriter.visibility)
+                            }
+
+                            //{% endif %}
+                            //{% if request.blueprint == "instructor" %}
+                            if (body.overwritee.labels.includes('Branch') && body.overwritee.isOwner &&
+                                body.overwritee.isPatchLeaf) {
+                                this.options = ['patch', 'fork']
+                                this.action = 'patch'
+                            } else {
+                                this.options = ['fork']
+                                this.action = 'fork'
+                            }
+                            //{% endif %}
+                            //{% if request.blueprint == "DLTC" %}
+                            if (body.overwritee.labels.includes('Trunk')) {
+                                if (body.overwritee.isPatchLeaf) {
+                                    this.options = ['patch', 'fork']
+                                    this.action = 'patch'
+                                } else {
+                                    this.options = ['fork']
+                                    this.action = 'fork'
+                                }
+                            }
+                            //{% endif %}
+                            this.overwriterLabels = body.overwriter.labels
+                            previewCy.add(nodeFactory(body.overwritee.courseCode)).data(
+                                'imageURL',
+                                body.overwriter.imageURL,
+                            )
+                            body.overwriter_triples.forEach(triple => {
+                                [triple.h_name, triple.t_name].forEach(name => {
+                                    if (previewCy.getElementById(name).length == 0) {
+                                        previewCy.add(nodeFactory(name))
+                                    }
+                                })
+                                previewCy.add(previewEdgeFactory(triple))
+                            })
+                            body.overwritee_triples.forEach(triple => {
+                                [triple.h_name, triple.t_name].forEach(name => {
+                                    if (previewCy.getElementById(name).length == 0) {
+                                        previewCy.add(nodeFactory(name))
+                                    }
+                                })
+                                let edge = previewCy.getElementById(edgeIdFromNames(triple.h_name,
+                                    triple
+                                    .r_name,
+                                    triple.t_name))[0]
+                                if (edge) {
+                                    edge.data({
+                                        original_value: triple.r_value ? 'true' : 'false'
+                                    })
+                                } else {
+                                    previewCy.add(originalEdgeFactory(triple))
+                                }
+                            })
+                            if (previewCy.edges(
+                                    '[preview_value = "false"][original_value = "true"],' +
+                                    '[preview_value = "true"][original_value = "false"],' +
+                                    '[preview_value = "true"][original_value = "undefined"]'
+                                ).length == 0) {
+                                this.isTrival = true
+                            }
+                            this.rootName = body.overwriter.courseCode
+                            let previewCyDijkstra = previewCy.elements().dijkstra('node[id = "' + this
+                                .rootName +
+                                '"]')
+                            previewCy.elements().style('visibility', 'hidden')
+                            let previewLayout = previewCy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return previewCyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            previewLayout.one('layoutstop', function () {
+                                let previewLayout = previewCy.layout(coseLayoutOptions)
+                                previewLayout.one('layoutstop', function () {
+                                    subjectCy.add(previewCy.elements().clone())
+                                    subjectCy.fit(coseLayoutOptions.padding)
+                                    previewCy.elements().style('visibility', 'visible')
+                                })
+                                previewLayout.run()
+                            })
+                            previewLayout.run()
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting draft information.')
+                        }
+                    })
+
+                Promise.all([graphPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            fit() {
+                previewCy.fit()
+                subjectCy.fit()
+            },
+            //{% if not readOnly %}
+            submit() {
+                if (!this.$refs.control.validate()) {
+                    return
+                }
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+
+                this.$root.progress.show = true
+                let url = null
+                //{% if request.blueprint == "instructor" %}
+                url =
+                    '{{ url_for("RESTful.branch.post", overwriterId=overwriterId,overwriteeId=overwriteeId)}}'
+                //{% endif %}
+                //{% if request.blueprint == "DLTC" %}
+                url =
+                    '{{ url_for("RESTful.trunk.post", overwriterId=overwriterId,overwriteeId=overwriteeId)}}'
+                //{% endif %}
+                let body = {
+                    tag: this.tag,
+                    action: this.action
+                }
+                fetch(
+                        url, {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(body)
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Unexpected error on creating new version.',
+                            () => {
+                                console.log(this.overwriter.labels)
+                                console.log(this.overwriter.labels.includes('Workspace'))
+                                if (this.overwriter.labels.includes('Workspace')) {
+                                    location.reload()
+                                } else {
+                                    window.close()
+                                }
+                            })
+                    })
+            },
+            // {% else %}
+            update() {
+                if (this.confirmed) {
+                    fetch("{{ url_for('RESTful.branch.patch', deltaGraphId=overwriterId) }}", {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                visibility: KCube.visibility.indexOf(this.visibility)
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Unexpected error on creating new version.',
+                                () => {
+                                    window.close()
+
+                                })
+                        })
+                } else {
+                    this.confirmed = true
+                }
+            },
+            // {% endif %}
+            copyJson() {
+                this.copy(
+                    JSON.stringify(this.overwriter_triples), 'json')
+            },
+            copyCsv() {
+                this.copy(this.overwriter_triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadJson() {
+                this.download(
+                    JSON.stringify(this.overwriter_triples), 'json')
+            },
+            downloadCsv() {
+                this.download(this.overwriter_triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadPNG() {
+                var a = document.createElement("a");
+                a.href = previewCy.png({
+                    bg: cyStyles.simpleStyle[0].style["background-color"],
+                    full: true,
+                })
+                a.download = this.rootName + '-' + this.overwriter.deltaGraphId + ".png"
+                a.click()
+                console.log(cy.png())
+            },
+            copy(str, format) {
+                console.log(str)
+                navigator.clipboard.writeText(str).then(() => {
+                    this.$root.responseSnackBar({
+                        success: true,
+                        message: format + ' copied to clipboard'
+                    })
+                })
+            },
+            download(str, format) {
+                console.log(str)
+                var element = document.createElement('a');
+                element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(str));
+                element.setAttribute('download', this.rootName + '-' + this.overwriter.deltaGraphId + '.' +
+                    format);
+
+                element.style.display = 'none';
+                document.body.appendChild(element);
+
+                element.click();
+
+                document.body.removeChild(element);
+            },
+        },
+        mounted: function () {
+            previewCy.mount(document.getElementById("preview"))
+            subjectCy.mount(document.getElementById("subject"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            previewCy.on('dragpan', (event) => {
+                subjectCy.pan(previewCy.pan())
+            })
+            previewCy.on('pinchzoom', (event) => {
+                subjectCy.zoom(previewCy.zoom())
+                subjectCy.pan(previewCy.pan())
+            })
+            previewCy.on('scrollzoom ', (event) => {
+                subjectCy.zoom(previewCy.zoom())
+                subjectCy.pan(previewCy.pan())
+            })
+            subjectCy.on('dragpan', (event) => {
+                previewCy.pan(subjectCy.pan())
+            })
+            subjectCy.on('pinchzoom', (event) => {
+                previewCy.zoom(subjectCy.zoom())
+                previewCy.pan(subjectCy.pan())
+            })
+            subjectCy.on('scrollzoom ', (event) => {
+                previewCy.zoom(subjectCy.zoom())
+                previewCy.pan(subjectCy.pan())
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

@@ -1,0 +1,1 @@
+MATCH (material:Material)-[:ATTRIBUTE_FROM]->(course:Course) RETURN course , count(material) AS NumberOfMaterials;

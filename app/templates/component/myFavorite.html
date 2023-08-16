@@ -1,0 +1,165 @@
+{% macro componentContent() %}
+<v-card>
+    <v-expansion-panels v-model="expansionPannel" @change="toggleExpansionPannel">
+        <v-expansion-panel>
+            <v-expansion-panel-header class="no-before" hide-actions
+                style="padding: 0px 0px 0px 24px; min-height: 30px;" dense>
+                <v-container style="padding: 0;">
+                    <v-row no-gutters>
+                        <v-col cols="2">
+                            <v-tooltip top>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-card-title v-on="on" v-bind="attrs"
+                                        style="padding: 16px 0 16px 0; font-size:.875rem">
+                                        <v-icon>bookmark_add</v-icon>
+                                        <v-icon>bookmark_remove</v-icon> Bookmark
+                                    </v-card-title>
+                                </template>
+                                click to edit bookmark
+                            </v-tooltip>
+                        </v-col>
+                        <v-divider vertical></v-divider>
+                        <v-col cols="10">
+                            <v-slide-group @click.native.stop style="padding: 16px 0 16px 0;">
+                                <v-slide-item v-for="fav in favorite">
+                                    <v-btn class="mx-2" style="text-transform: none;" depressed :href="fav.url">
+                                        ${fav.title}
+                                        <v-icon right>${fav.icon}</v-icon>
+                                    </v-btn>
+                                </v-slide-item>
+                            </v-slide-group>
+                        </v-col>
+                    </v-row>
+                </v-container>
+            </v-expansion-panel-header>
+            <v-expansion-panel-content>
+                <v-container style="padding: 0;">
+                    <v-row no-gutters>
+                        <v-col>
+                            <v-divider></v-divider>
+                            <v-tooltip v-model="favoriteTooltip" top>
+                                <template v-slot:activator="{ attrs }">
+                                    <v-card-subtitle v-bind="attrs">
+                                        <v-icon>bookmark</v-icon> Bookmarked
+                                    </v-card-subtitle>
+                                </template>
+                                You can drag links from side bar
+                            </v-tooltip>
+                            <v-divider></v-divider>
+                        </v-col>
+                        <v-col>
+                            <v-divider></v-divider>
+                            <v-tooltip v-model="removeTooltip" top>
+                                <template v-slot:activator="{ attrs }">
+                                    <v-card-subtitle v-bind="attrs">
+                                        <v-icon>bookmark_remove</v-icon> Remove
+                                    </v-card-subtitle>
+                                </template>
+                                The trash list would be cleared when the page is refreshed
+                            </v-tooltip>
+                            <v-divider></v-divider>
+                        </v-col>
+                    </v-row>
+                    <v-row no-gutters>
+                        <v-col>
+                            <v-list nav dense>
+                                <draggable v-model="favorite" group="url" @add="setLocal()" @remove="setLocal()"
+                                    style="height: 40vh; overflow-y: scroll;">
+                                    <v-list-item link v-for="fav in favorite">
+                                        <v-list-item-icon>
+                                            <v-icon>${fav.icon}</v-icon>
+                                        </v-list-item-icon>
+                                        <v-list-item-content>
+                                            ${fav.title}</v-list-item-content>
+                                    </v-list-item>
+                                </draggable>
+                            </v-list>
+                        </v-col>
+                        <v-col>
+                            <v-list nav dense>
+                                <draggable v-model="remove" group="url" style="height: 40vh; overflow-y: scroll;">
+                                    <v-list-item link v-for="fav in remove">
+                                        <v-list-item-icon>
+                                            <v-icon>${fav.icon}</v-icon>
+                                        </v-list-item-icon>
+                                        <v-list-item-content>
+                                            ${fav.title}</v-list-item-content>
+                                    </v-list-item>
+                                </draggable>
+                            </v-list>
+                        </v-col>
+                    </v-row>
+                </v-container>
+            </v-expansion-panel-content>
+        </v-expansion-panel>
+    </v-expansion-panels>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<style>
+    .no-before::before {
+        content: none
+    }
+</style>
+<script type="text/x-template" id="kcube-bookmark">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-bookmark', {
+        data: () => ({
+            favorite: [],
+            remove: [],
+            favoriteTooltip: false,
+            removeTooltip: false,
+            expansionPannel: undefined,
+        }),
+        methods: {
+            getLocal() {
+                let option = localStorage.getItem('favorite')
+                if (option != null) this.favorite = JSON.parse(option)
+            },
+            setLocal() {
+                let oldLength = this.favorite.length
+                this.favorite = this.favorite.filter((value, index, self) =>
+                    index === self.findIndex((t) => (
+                        t.url === value.url
+                    ))
+                )
+                if (oldLength != this.favorite.length) {
+                    this.$root.errorDisplay({}, 'Page already bookmarked.')
+                }
+                oldLength = this.favorite.length
+                let tabPage = this.$root.KCube.roleTab.map(g => g.tabs).flat().map(t => t.url)
+                this.favorite = this.favorite.filter((value, index, self) => !tabPage.includes(value.url))
+                if (oldLength != this.favorite.length) {
+                    this.$root.errorDisplay({}, 'Page already in top tab bar.')
+                }
+                let option = JSON.stringify(this.favorite)
+                localStorage.setItem('favorite', option)
+            },
+            toggleExpansionPannel() {
+                if (this.expansionPannel != undefined) {
+                    this.isnavHoverDisabledByMe = this.$root.navHover != false
+                    setTimeout(() => { this.$root.miniSync = false; this.$root.navHover = false; }, 155);
+                    setTimeout(() => { this.favoriteTooltip = true }, 150);
+                    setTimeout(() => { this.removeTooltip = true }, 150);
+                }
+                else {
+                    this.favoriteTooltip = false
+                    this.removeTooltip = false
+                    if (this.isnavHoverDisabledByMe)
+                        this.$root.navHover = true;
+                }
+            },
+        },
+        mounted() {
+            this.getLocal()
+        },
+        template: '#kcube-bookmark',
+        delimiters: ['${', '}'],
+    })
+
+</script>
+{% endmacro %}

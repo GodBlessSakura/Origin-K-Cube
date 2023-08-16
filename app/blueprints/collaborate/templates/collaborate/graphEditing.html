@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-tabs v-model="tab" center-active @change="selectTab">
+        <v-tab herf="?tab=relationship">Suggest KG relationship</v-tab>
+    </v-tabs>
+    <v-tabs-items v-model="tab">
+        <v-tab-item>
+            <collaborate-relationship></collaborate-relationship>
+        </v-tab-item>
+    </v-tabs-items>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    let tabs = ['relationship']
+    Vue.component('app-content', {
+        data: () => ({
+            tab: tabs.indexOf(new URLSearchParams(window.location.search).get('tab')),
+        }),
+        methods: {
+            selectTab(tab) {
+                let query = new URLSearchParams(window.location.search)
+                query.set("tab", tabs[tab])
+                window.history.pushState(
+                    window.history.state, "", window.location.pathname + '?' + query.toString())
+
+            }
+        },
+        template: '#content'
+    })
+</script>
+
+{% import 'collaborate/relationship.html' as relationship with context %}
+<script type="text/x-template" id="collaborate-relationship">
+    {{ relationship.component() }}
+</script>
+{{ relationship.script() }}
+
+
+{% endblock %}

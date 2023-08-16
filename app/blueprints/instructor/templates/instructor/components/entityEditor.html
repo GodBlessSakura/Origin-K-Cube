@@ -1,0 +1,296 @@
+{% macro componentContent() %}
+<v-card style="width: 35vw" flat>
+    <v-container>
+        <v-row>
+            <slot></slot>
+        </v-row>
+        <v-row>
+            <v-card-title style="padding:unset">${name}
+            </v-card-title>
+        </v-row>
+        <v-row dense>teaching plan:</v-row>
+        <v-form ref="activityControl">
+            <v-row>
+                <v-col>
+                    <v-text-field label="description" v-model="activityDesc" @input="setActivity"
+                        :rules="activityDescRules"></v-text-field>
+                </v-col>
+                <v-col>
+                    <v-text-field label="week" placeholder="no teaching activity is set" persistent-placeholder
+                        type="number" v-model="activityWeek" @input="setActivity" :rules="activityWeekRules">
+                    </v-text-field>
+                </v-col>
+                <v-col cols="auto">
+                    <v-icon v-if="syned">sync</v-icon>
+                    <v-icon v-else @click="setActivity">sync_problem</v-icon>
+                </v-col>
+            </v-row>
+        </v-form>
+        <v-row dense>
+            <v-col>
+                teaching material:
+            </v-col>
+            <v-col>
+                <v-dialog v-model="materialForm" max-width="75vw" eager>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-icon v-bind="attrs" v-on="on" ref="shepherd-materialFormOpenBtn">add_link
+                        </v-icon>
+                    </template>
+                    <v-card>
+                        <v-card-title>Create teaching material for ${name}:
+                        </v-card-title>
+                        <v-form ref="materialControl">
+                            <v-text-field v-model="materialDesc" :rules="materialDescRules" dense label="Description">
+                            </v-text-field>
+                            <v-text-field v-model="materialUrl" :rules="materialUrlRules" dense label="Link">
+                            </v-text-field>
+                        </v-form>
+                        <v-btn small @click="submitMaterial">
+                            submit
+                        </v-btn>
+                    </v-card>
+                </v-dialog>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="materials" :items-per-page="500"
+                multi-sort :search="search">
+                <template v-slot:item.actions="{ item }">
+                    <v-icon @click="removeMaterial(item.id)">
+                        link_off
+                    </v-icon>
+                </template>
+            </v-data-table>
+        </v-row>
+    </v-container>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-entity-form">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-entity-form', {
+        props: ["courseCode"],
+        data: () => ({
+            materialForm: false,
+            name: null,
+            search: '',
+            syned: true,
+            activityDesc: null,
+            activityWeek: null,
+            activityDescRules: [v => !!v || 'Description is required',
+            v => (v && v.length > 1 && v.length < 99) ||
+                'Description should be anything between 1 and 99 charactors',
+            v => (v && /{{regExpRules["desc"]}}/.test(v)) ||
+                'Description can only contains alphanumeric characters and space.'
+            ],
+            activityWeekRules: [v => !!v || 'week is required',
+            v => (v && v > 0 && v < 14) ||
+                'Week should be between 1 and 13',
+            ],
+            materials: [],
+            headers: [
+                {
+                    text: 'Description',
+                    value: 'desc',
+                    groupable: false,
+                },
+                {
+                    text: 'Link',
+                    value: 'url',
+                    groupable: false,
+                },
+                {
+                    text: 'Actions',
+                    value: 'actions',
+                    groupable: false,
+                },
+            ],
+            materialControl: true,
+            materialDesc: '',
+            materialDescRules: [v => !!v || 'Description is required',
+            v => (v && v.length > 3 && v.length < 501) ||
+                'Description should be anything between 1 and 99 charactors',
+            v => (v && /{{regExpRules["desc"]}}/.test(v)) ||
+                'Description can only contains alphanumeric characters and space.'
+            ],
+            materialUrl: '',
+            materialUrlRules: [v => !!v || 'Link is required',],
+        }),
+        methods: {
+            loadData(name) {
+                this.name = name
+                this.activityDesc = null
+                this.activityWeek = null
+                this.$refs.activityControl.resetValidation()
+                this.materials = []
+                this.$root.progress.show = true
+                let entityPromise =
+                    fetch(
+                        "{{ url_for('RESTful.entity.get') }}" + this.courseCode + '/' +
+                        encodeURIComponent(
+                            this.name) + "?ofUser=true", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            if (body.data) {
+                                this.activityDesc = name
+                                let activity = body.data.filter(d => d.labels.includes("Activity"))
+                                if (activity.length > 0) {
+                                    activity = activity[0]
+                                    this.getActivity(activity)
+                                }
+                                body.data.filter(d => d.labels.includes("Material")).forEach(d => {
+                                    this.materials.push(d)
+                                })
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error on getting entity information.')
+                            }
+                        })
+                Promise.all([entityPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            getActivity(activity) {
+                this.activityDesc = activity.desc
+                this.activityWeek = activity.week
+                console.log(activity.week)
+            },
+            submitMaterial() {
+                if (this.$refs.materialControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.material.post') }}" + this.courseCode + '/' +
+                        encodeURIComponent(this
+                            .name), {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            desc: this.materialDesc,
+                            url: this.materialUrl
+                        })
+                    })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Creation failed for unknown reason.',
+                                () => { this.loadData(this.name); this.materialForm = false })
+                        })
+                }
+            },
+            removeMaterial(id) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.material.delete') }}" + encodeURIComponent(id), {
+                    method: 'DELETE',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Delete failed for unknown reason.',
+                            () => (this.loadData(this.name)))
+                    })
+            },
+            setActivity(event) {
+                if (this.$refs.activityControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    this.$root.customizedFetch(
+                        "{{ url_for('RESTful.activity.post') | safe}}" + this.courseCode + '/' +
+                        encodeURIComponent(
+                            this.name), {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            desc: this.activityDesc,
+                            week: this.activityWeek
+                        })
+                    }, () => { this.syned = false })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            if (body.activity) {
+                                this.$emit('activity-change', { name: this.name, desc: this.activityDesc, week: this.activityWeek })
+                            } else {
+                                throw new Error(body.message)
+                            }
+                        })
+                }
+            },
+            updateEntity(entity) {
+                if (entity.name == this.name) {
+                    this.getActivity(entity)
+                }
+            }
+        },
+        template: '#kcube-entity-form',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

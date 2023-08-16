@@ -1,0 +1,172 @@
+{% macro componentContent() %}
+
+<v-card v-if="course"
+    @click="$emit('click')"
+    :ref="''+course.courseCode" :ripple="{class: course.isTeaching && !course.hasExposedGraph?'error--text':''}">
+    <v-list-item three-line>
+        <v-list-item-content>
+            <div style="cursor: pointer;">
+                <v-list-item-title>
+                    ${course.courseCode}
+                    <v-icon>
+                        launch
+                    </v-icon>
+                </v-list-item-title>
+            </div>
+        </v-list-item-content>
+
+        <v-badge bordered :icon="course.isTeaching && !course.hasExposedGraph?'priority_high':'work'" offset-x="24"
+            offset-y="24" :color="course.isTeaching && !course.hasExposedGraph?'error':'info'"
+            :value="(course.workspaces?.length > 0 || course.isTeaching && !course.hasExposedGraph) && showBadage">
+            <v-list-item-avatar tile size="96">
+                <v-img :src="course.imageURL"></v-img>
+            </v-list-item-avatar>
+        </v-badge>
+        <v-menu bottom offset-y>
+            <template v-slot:activator="{ on, attrs }">
+                <v-list-item-icon v-bind="attrs" v-on="on">
+                    <v-icon>more_vert</v-icon>
+                </v-list-item-icon>
+            </template>
+            <v-list class="no-padding-list" dense>
+                <v-subheader style="height: auto; font-size: small;">page</v-subheader>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on"
+                                :href="'{{ url_for('instructor.repositories') }}/' + course.courseCode" icon>
+                                <v-icon>table_view</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Repository</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on"
+                                :href="'{{ url_for('instructor.coursePlan') }}/' + course.courseCode" icon>
+                                <v-icon>edit_calendar</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Course Plan</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on"
+                                :href="'{{ url_for('instructor.material') }}/' + course.courseCode" icon>
+                                <v-icon>add_link</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Course Resources</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on"
+                                :href="'{{ url_for('instructor.versionTree') }}/' + course.courseCode" icon>
+                                <v-icon>account_tree</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Versions</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-divider></v-divider>
+                <v-subheader style="height: auto; font-size: small;">action</v-subheader>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on" @click.stop="$emit('assignment')" icon>
+                                <v-icon>assignment_ind</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>List Course Instructor</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on" @click.stop="$emit('import')" icon>
+                                <v-icon>file_upload</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Import graph</span>
+                    </v-tooltip>
+                </v-list-item>
+                <v-list-item>
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on" @click.stop="$emit('info')" icon>
+                                <v-icon>edit</v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Edit info</span>
+                    </v-tooltip>
+                </v-list-item>
+            </v-list>
+        </v-menu>
+    </v-list-item>
+    <v-card-actions>
+        <v-tooltip bottom>
+            <template v-slot:activator="{ on, attrs }">
+                <v-btn :color="course.isTeaching === true?'success':'error'"
+                    @click.stop="course.isTeaching === true?$emit('quit'):$emit('join')" v-bind="attrs" v-on="on"
+                    v-show="showDutyBtn">
+                    <!-- <v-icon left>public</v-icon> -->
+                    duty
+                </v-btn>
+            </template>
+            ${'click to '+(course.isTeaching === true?'off duty':'on duty')}
+        </v-tooltip>
+        <v-spacer></v-spacer>
+        <v-btn v-if="course.workspaces.length == 0" @click.stop="$emit('workspace')">
+            create mind map &nbsp;<v-icon small>work_outline</v-icon>
+        </v-btn>
+        <div v-else>
+            <v-tooltip bottom>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn v-bind="attrs" v-on="on" color="success" style="width: 36px; min-width: unset;"
+                        @click.stop="$emit('workspace')" ref="shepherd-newWorkspace">
+                        <v-icon>
+                            add_box</v-icon>
+                    </v-btn>
+                </template>
+                new workspace
+            </v-tooltip>
+            <v-tooltip bottom>
+                <template v-slot:activator="{ on, attrs }">
+                    <v-btn v-bind="attrs" v-on="on" color="info" ref="shepherd-recentVisit" @click.stop
+                        :href="'{{ url_for('instructor.workspace') }}' + course.workspaces[0].deltaGraphId">
+                        recent visit &nbsp;<v-icon small>work</v-icon>
+                    </v-btn>
+                </template>
+                ${course.workspaces[0].tag}
+            </v-tooltip>
+        </div>
+    </v-card-actions>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-course-item">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-course-item', {
+        props: {
+            course: Object,
+            showDutyBtn: Boolean,
+            showBadage: Boolean,
+        },
+        methods: {},
+        template: '#kcube-course-item',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

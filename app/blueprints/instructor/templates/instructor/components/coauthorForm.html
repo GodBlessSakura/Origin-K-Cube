@@ -1,0 +1,158 @@
+{% macro componentContent() %}
+<v-card flat v-show="instructors">
+    <v-card-text>
+        <v-subheader>Coauthor:</v-subheader>
+        <v-tooltip bottom v-for="instructor in instructors"
+            v-if="instructor.isCoauthoring && instructor.user.userId != '{{USER.userId}}'">
+            <template v-slot:activator="{ on, attrs  }">
+                <v-chip v-bind="attrs" v-on="on" @click="unassign(instructor.user.userId)" close-icon="expand_more">
+                    ${instructor.user.userName}
+                    <v-icon right>expand_more</v-icon>
+                </v-chip>
+            </template>
+            ${instructor.user.email}
+        </v-tooltip>
+    </v-card-text>
+    <v-card-text>
+        <v-subheader>Others</v-subheader>
+        <v-tooltip bottom v-for="instructor in instructors"
+            v-if="!instructor.isCoauthoring && instructor.user.userId != '{{USER.userId}}'">
+            <template v-slot:activator="{ on, attrs  }">
+                <v-chip v-bind="attrs" v-on="on" @click="assign(instructor.user.userId)" close-icon="expand_less">
+                    ${instructor.user.userName}
+                    <v-icon right>expand_less</v-icon>
+                </v-chip>
+            </template>
+            ${instructor.user.email}
+        </v-tooltip>
+    </v-card-text>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-coauthor-form">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-coauthor-form', {
+        props: ['deltaGraphId'],
+        data: () => ({
+            instructors: null,
+        }),
+        methods: {
+            loadData(courseCode) {
+                fetch("{{ url_for('RESTful.workspace.query') }}" + this.deltaGraphId + "/coauthors", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.instructors) {
+                            this.instructors = body.instructors
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting instructor assignment information.')
+                        }
+
+                    })
+            },
+            assign(userId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.workspace.patch') }}" + this.deltaGraphId, {
+                        method: 'PATCH',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            userId: userId,
+                            assignment: true
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Assignment failed for unkown reason.',
+                            () => {
+                                this.instructors[this.instructors.findIndex(instructor => instructor
+                                    .user.userId ==
+                                    userId)].isCoauthoring = true
+                            })
+
+                    })
+            },
+            unassign(userId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.workspace.patch') }}" + this.deltaGraphId, {
+                        method: 'PATCH',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            userId: userId,
+                            assignment: false
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Assignment failed for unkown reason.',
+                            () => {
+                                this.instructors[this.instructors.findIndex(instructor => instructor
+                                    .user.userId ==
+                                    userId)].isCoauthoring = false
+                            })
+
+                    })
+            },
+        },
+        template: '#kcube-coauthor-form',
+        delimiters: ['${', '}'],
+        mounted: function () {
+            this.loadData()
+        }
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-card-title>
+        Coming soon
+    </v-card-title>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+{% include "instructor/components/workspaceForm.html" %}
+{% endif %}
+<script>
+    Vue.component('app-content', {
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

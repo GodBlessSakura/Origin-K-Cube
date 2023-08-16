@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-container style="height: 100%;">
+    <v-row>
+        <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" hide-details>
+        </v-text-field>
+    </v-row>
+    <v-row>
+        <v-data-table show-group-by :headers="headers" style="width:100%" :items="history" :items-per-page="500"
+            multi-sort :search="search">
+            <template v-slot:item.ownerId="{ item }">
+                ${item.ownerId == null ? 'department' : item.ownerId}
+            </template>
+            <template v-slot:item.relationship.value="{ item }">
+                ${item.relationship.value == true ? 'create' : 'delete'}
+            </template>
+            <template v-slot:item.actions="{ item }">
+                <v-icon
+                    @click="newTab('{{ url_for('collegue.graphView') }}' + item.deltaGraph.deltaGraphId)">
+                    open_in_new
+                </v-icon>
+            </template>
+            <template v-slot:item.relationship.creationDate="{ item }">
+                ${item.relationship.creationDate | formatDate}
+            </template>
+        </v-data-table>
+    </v-row>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            search: new URLSearchParams(window.location
+                .search).get('search'),
+            history: [],
+            headers: [
+                {
+                    text: 'Version id',
+                    value: 'deltaGraph.deltaGraphId',
+
+                },
+                {
+                    text: 'Version tag',
+                    value: 'deltaGraph.tag',
+
+                },
+                {
+                    text: 'Action',
+                    value: 'relationship.value',
+                },
+                {
+                    text: 'Performed by',
+                    value: 'ownerId',
+                },
+                {
+                    text: 'Date',
+                    value: 'relationship.creationDate',
+
+                },
+                {
+                    text: 'Open in new tab',
+                    value: 'actions',
+                    groupable: false,
+                },
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let entityGraphPromise = fetch(
+                        "{{ url_for('RESTful.triple.query', h_name=h_name, r_name=r_name, t_name=t_name, history = True) | safe}}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.history = body.history
+                    })
+                Promise.all([entityGraphPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            },
+        },
+        mounted: function () {
+            self = this
+            window.onmessage = function (e) {
+                console.log(e)
+                self.search = e.data
+            };
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

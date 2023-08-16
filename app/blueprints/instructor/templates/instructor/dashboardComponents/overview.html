@@ -1,0 +1,50 @@
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;" @resize="resize()">
+    overview: ${el?.offsetWidth} X ${el?.offsetHeight}
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-instructor-overview">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    widgetName = 'overview'
+    widgetComponentName = 'kcube-instructor-overview'
+    KCube.widgetName.push(widgetName)
+    KCube.widgetOptions[widgetName] = {
+        component: widgetComponentName,
+        minH: 2,
+        minW: 3,
+        maxH: 2,
+        maxW: 3,
+        requests: [{
+            url: "{{ url_for('RESTful.relationship.query', pullSummary=True) }}",
+            method: "GET",
+        }, ]
+    }
+    Vue.component(widgetComponentName, {
+        data: () => ({
+            el: {
+                offsetHeight: 0,
+                offsetWidth: 0
+            }
+        }),
+        methods: {
+            resize() {
+                console.log("resize")
+                this.el.offsetHeight = this.$el.offsetHeight
+                this.el.offsetWidth = this.$el.offsetWidth
+            }
+        },
+        mounted() {
+            new ResizeObserver(this.resize).observe(this.$el)
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

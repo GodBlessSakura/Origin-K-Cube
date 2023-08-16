@@ -1,0 +1,1152 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<div style="height: 100%; width: 100%;">
+    <v-container style="height: 100%; width: 100%; padding: 0; margin: 0; max-width: unset; overflow: hidden;">
+        <v-row style="height: 100%;" no-gutters>
+            <v-col style="height: 100%;">
+                <v-container style="height: 100%; width: 100%; padding: 0; margin: 0; max-width: unset;">
+                    <v-row style="height: 12.5%; margin: 0;">
+                        <v-col cols="auto" style="align-items: center;display: grid;">
+                            <v-card-text>
+                                Jump to another related version:
+                            </v-card-text>
+                        </v-col>
+                        <v-col cols="3">
+                            <v-select @focus="interactingWithSelect=true" @blur="interactingWithSelect=false"
+                                @change="setFocusedNodeById($event)" :value="focusedNode?.id" :items="sibling"
+                                item-value="id" item-text="tag" :label="'# of versions in sibling: ' + sibling.length">
+                            </v-select>
+                        </v-col>
+                        <v-col cols="3">
+                            <v-select @focus="interactingWithSelect=true" @blur="interactingWithSelect=false"
+                                @change="setFocusedNodeById($event)" :value="focusedNode?.id" :items="variant"
+                                item-value="id" item-text="tag" :label="'# of versions in variant: ' + variant.length">
+                            </v-select>
+                        </v-col>
+                        <v-col cols="3">
+                            <v-select @focus="interactingWithSelect=true" @blur="interactingWithSelect=false"
+                                @change="setFocusedNodeById($event)" :value="focusedNode?.id" :items="repository"
+                                item-value="id" item-text="tag"
+                                :label="'# of versions in repository: ' + repository.length">
+                            </v-select>
+                        </v-col>
+                    </v-row>
+                    <v-row style="height: 12.5%; margin: 0;">
+                        <v-col cols="3" style="align-items: center;display: grid;">
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs  }">
+                                    <div v-bind="attrs" v-on="on">
+                                        <v-card-text>
+                                            Swap among related version:
+                                            <v-btn icon :color="interactingWithSelect?'grey':'blue'">
+                                                <v-icon>keyboard</v-icon>
+                                            </v-btn>
+                                            <v-icon>help</v-icon>
+                                        </v-card-text>
+                                    </div>
+                                </template>
+                                <span v-if="interactingWithSelect">
+                                    You are focusing one of the above drop-down list, keyboard command are captured for
+                                    scrolling through the drop-down list.<br>
+                                    If you want to browse the version tree, you may click on anywhere outside the
+                                    drop-down list<br>
+                                </span>
+                                <span v-else>
+                                    <v-card-text>
+                                        Use <v-icon color="white">swap_horiz</v-icon> to swap focus among varient and
+                                        sibling.<br>
+                                        Use <v-icon color="white">swap_vert</v-icon> to swap focus among repository.<br>
+                                        Use "Enter" to open the graph viewer of the focused version.<br>
+                                        Use "Ese" to close the graph viewer.
+                                    </v-card-text>
+                                </span>
+                            </v-tooltip>
+                        </v-col>
+                        <v-col cols="1" style="align-items: center;display: grid;">
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs  }">
+                                    <v-icon v-bind="attrs" v-on="on">tips_and_updates</v-icon>
+                                </template>
+                                You may click on an edge to view the changes that an update has made
+                            </v-tooltip>
+                        </v-col>
+                    </v-row>
+                    <v-row style="height: 75%; border-top: 1px solid black; margin: 0;">
+                        <v-expand-transition>
+                            <v-card style="width: 100%; height: calc(100% - 20px)" v-show="!showFrame">
+                                <v-card-title>Version tag: ${focusedNode?.tag}</v-card-title>
+                                <v-card-subtitle>Id: ${focusedNode?.deltaGraphId}</v-card-subtitle>
+                                <v-card-subtitle>Creation date: ${focusedNode?.creationDate | formatDate}
+                                </v-card-subtitle>
+
+                                <v-card-actions>
+                                    <v-btn v-if="viewingId != focusedNode?.id" style="text-transform: none;" outlined
+                                        @click="openFrame(_focusedNode)">
+                                        open graph of this version
+                                    </v-btn>
+                                    <v-btn v-else style="text-transform: none;" outlined @click="showFrame = true">
+                                        already viewing graph of this version
+                                    </v-btn>
+                                </v-card-actions>
+                                <div v-if="showSelectBar">
+                                    <v-card-actions>
+                                        <v-btn style="text-transform: none;" outlined @click="resume" color="error">
+                                            Cancel
+                                        </v-btn>
+                                        <v-card-subtitle>
+                                            action target: ${_selectedNode.data("tag")}
+                                            (${_selectedNode.data("deltaGraphId")})
+                                            ${_selectedNode.classes() | nonStylingClasses}
+                                        </v-card-subtitle>
+                                    </v-card-actions>
+                                </div>
+                                <div v-else>
+                                    {% if request.blueprint == "instructor" %}
+                                    <v-card-actions>
+                                        <v-subheader
+                                            v-if="focusedNode?.classes.includes('branch') || focusedNode?.classes.includes('trunk')">
+                                            status
+                                        </v-subheader>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('isOwner')"
+                                            @click="selectFocusedNode();toggleExposure(_focusedNode)">
+                                            Toggle publishment
+                                        </v-btn>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('isOwner')"
+                                            @click="selectFocusedNode();readyToPush(_focusedNode)">
+                                            Toggle ready-to-pull
+                                        </v-btn>
+                                    </v-card-actions>
+                                    <v-card-actions>
+                                        <v-subheader
+                                            v-if="focusedNode?.classes.includes('branch') || focusedNode?.classes.includes('trunk')">
+                                            versioning</v-subheader>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('branch')"
+                                            @click="selectFocusedNode();mergeWithAnother(_focusedNode)">
+                                            Merge with another
+                                        </v-btn>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('branch') || focusedNode?.classes.includes('trunk')"
+                                            @click="selectFocusedNode();newTab('{{ url_for('instructor.graphImport')}}' + _focusedNode?.data('deltaGraphId'))">
+                                            Import graph
+                                        </v-btn>
+                                    </v-card-actions>
+                                    <v-card-actions>
+                                        <v-subheader>workspaces</v-subheader>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('branch') || focusedNode?.classes.includes('trunk')"
+                                            @click="selectFocusedNode();createWorkspaceDialogue(_focusedNode)">
+                                            Create workspace
+                                        </v-btn>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('workspace')"
+                                            @click="selectFocusedNode();commit(_focusedNode)">
+                                            Commit workspace
+                                        </v-btn>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('workspace')"
+                                            @click="selectFocusedNode();checkout()">
+                                            Checkout different version
+                                        </v-btn>
+                                    </v-card-actions>
+                                    {% endif %}
+                                    {% if request.blueprint == "DLTC" %}
+                                    <v-card-actions>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('trunk') && !focusedNode?.classes.includes('isActive')"
+                                            @click="selectFocusedNode();setActive(_focusedNode)">
+                                            Set as active
+                                        </v-btn>
+                                        <v-btn style="text-transform: none;" outlined
+                                            v-if="focusedNode?.classes.includes('trunk')"
+                                            @click="selectFocusedNode();release(_focusedNode)">
+                                            Release new version
+                                        </v-btn>
+                                    </v-card-actions>
+                                    {% endif %}
+
+                                </div>
+                            </v-card>
+                        </v-expand-transition>
+                        <v-btn style="text-transform: none;" block x-small @click="showFrame = !showFrame"
+                            elevation="0">
+                            ${showFrame? 'view summary':'view graph'}
+                            <v-icon dark>
+                                ${showFrame? 'expand_more':'expand_less'}
+                            </v-icon>
+                        </v-btn>
+                        <v-expand-transition>
+                            <div v-show="showFrame" style="width: 100%; height: calc(100% - 20px)">
+                                <iframe v-show="showFrame" ref="iframe" style="width: 100%; height: 100%"
+                                    frameBorder="0" :src="url" scrolling="no">
+                                </iframe>
+                            </div>
+                        </v-expand-transition>
+                    </v-row>
+                </v-container>
+            </v-col>
+            <v-col style="height: 100%; border-left: 1px solid black;" cols="3">
+                <div id="cy" style="height: 100%; width: 100%;"></div>
+            </v-col>
+        </v-row>
+    </v-container>
+    <v-snackbar v-model="showSelectBar" timeout='-1'>
+        Select (press "Enter" / click on)
+        ${ (snackbarMethod == 'branch' || snackbarMethod == 'workspace')?'a branch or a trunk':'a ready branch'}
+        for ${
+        (snackbarMethod == 'branch')?'merging':(snackbarMethod == 'workspace')?'checkout':'creation'}
+        <template v-slot:action="{ attrs }">
+            <v-btn color="error" text v-bind="attrs" @click="resume()">
+                Cancel
+            </v-btn>
+        </template>
+    </v-snackbar>
+    <v-menu v-model="showMenu" :position-x="cursor_x" :position-y="cursor_y" absolute>
+        <v-list>
+            <v-subheader>${this._selectedNode?.data('tag')}</v-subheader>
+            <v-divider> </v-divider>
+            {% if request.blueprint == "instructor" %}
+            <v-subheader v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')">status
+            </v-subheader>
+            <v-list-item v-if="selectedNodeClasses.includes('isOwner')" @click="toggleExposure(_selectedNode)">
+                <v-list-item-title>Toggle publishment</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="selectedNodeClasses.includes('isOwner')" @click="readyToPush(_selectedNode)">
+                <v-list-item-title>Toggle ready-to-pull</v-list-item-title>
+            </v-list-item>
+            <v-divider v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')">
+            </v-divider>
+            <v-subheader v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')">
+                versioning</v-subheader>
+            <v-list-item v-if="selectedNodeClasses.includes('branch')" @click="mergeWithAnother(_selectedNode)">
+                <v-list-item-title>Merge with another</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')"
+                @click="newTab('{{ url_for('instructor.graphImport')}}' + _selectedNode?.data('deltaGraphId'))">
+                <v-list-item-title>Import graph</v-list-item-title>
+            </v-list-item>
+            <v-divider v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')">
+            </v-divider>
+            <v-subheader>workspaces</v-subheader>
+            <v-list-item v-if="selectedNodeClasses.includes('branch') || selectedNodeClasses.includes('trunk')"
+                @click="createWorkspaceDialogue(_selectedNode)">
+                <v-list-item-title>Create workspace</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="selectedNodeClasses.includes('workspace')" @click="commit(_selectedNode)">
+                <v-list-item-title>Commit workspace</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="selectedNodeClasses.includes('workspace')" @click="checkout(_selectedNode)">
+                <v-list-item-title>Checkout different graph</v-list-item-title>
+            </v-list-item>
+            {% endif %}
+            {% if request.blueprint == "DLTC" %}
+            <v-list-item v-if="selectedNodeClasses.includes('trunk') && !selectedNodeClasses.includes('isActive')"
+                @click="setActive(_selectedNode)">
+                <v-list-item-title>Set as active</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="selectedNodeClasses.includes('trunk')" @click="release(_selectedNode)">
+                <v-list-item-title>Release new version</v-list-item-title>
+            </v-list-item>
+            {% endif %}
+        </v-list>
+    </v-menu>
+    {% if request.blueprint == "instructor" %}
+    <v-dialog v-model="workspaceCreateDialog">
+        <v-card>
+            <v-card-title class="text-h5 grey lighten-2">
+                Give a name tag to your new workspace:
+            </v-card-title>
+            <v-form ref="createWorkspaceControl">
+                <v-text-field label="tag" :rules="tagRules" v-model="tag" required></v-text-field>
+            </v-form>
+            <v-divider></v-divider>
+
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" text @click="createWorkspace(_focusedNode)">
+                    create
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+    {% endif %}
+    <v-btn @click="setZoom(0.2)"
+        style="position: absolute; right:5vw; bottom: 5vw; border-radius: 100px 100px 0px 0px; height: 50px; width:100px; transform: translate(+50%, -50%); min-width: unset;">
+        <v-icon>add</v-icon>
+    </v-btn>
+    <v-btn @click="setZoom(-0.2)"
+        style="position: absolute; right:5vw; bottom: 5vw; border-radius: 0px 0px 100px 100px; height: 50px; width:100px; transform: translate(+50%, 50%); min-width: unset;">
+        <v-icon>remove</v-icon>
+    </v-btn>
+    <v-tooltip bottom>
+        <template v-slot:activator="{ on, attrs }">
+            <v-btn icon color="primary" v-bind="attrs" v-on="on" @click="backToFocusedNode()"
+                style="position: absolute; right:calc(5vw - 50px); bottom: calc(5vw + 50px); transform: translate(+50%, -50%);">
+                <v-icon>loupe</v-icon>
+            </v-btn>
+        </template>
+        back to selected
+    </v-tooltip>
+    <v-tooltip bottom attach>
+        <template v-slot:activator="{ on, attrs }">
+            <v-btn icon color="primary" v-bind="attrs" v-on="on" @click="focus('')"
+                style="position: absolute; right:calc(5vw - 50px); bottom: calc(5vw - 50px); transform: translate(+50%, 50%);">
+                <v-icon>zoom_out_map</v-icon>
+            </v-btn>
+        </template>
+        show all
+    </v-tooltip>
+    <span
+        style="position: absolute; right:5vw; bottom: 5vw; transform: translate(+50%, -50%); pointer-events: none;">${zoom.toFixed(1)}</span>
+</div>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+<script>
+    cy = cytoscape({
+        style: [{
+            selector: ':selected,.',
+            style: {
+                'background-color': 'grey',
+                'line-color': 'grey',
+                'target-arrow-color': 'grey',
+                'source-arrow-color': 'grey'
+            }
+        }, {
+            selector: 'node',
+            style: {
+                'label': 'data(tag)'
+            }
+        }, {
+            selector: 'node.trunk',
+            style: {
+                'shape': 'star'
+            }
+        }, {
+            selector: 'node.isExposed',
+            style: {
+                'background-color': 'green'
+            }
+        }, {
+            selector: 'node.isActive',
+            style: {
+                'background-color': 'red'
+            }
+        }, {
+            selector: 'node.workspace',
+            style: {
+                'shape': 'diamond'
+            }
+        }, {
+            selector: 'node.workspace',
+            style: {
+                'shape': 'triangle'
+            }
+        },
+        {
+            selector: 'edge',
+            style: {
+                'curve-style': 'bezier'
+            }
+        },
+        {
+            selector: 'edge[tag*="PULL"]',
+            style: {
+                'line-style': 'dashed'
+            }
+        },
+        {
+            selector: 'edge[tag="WORK_ON"]',
+            style: {
+                'line-style': 'dotted'
+            }
+        },
+        {
+            selector: 'node.uselectable',
+            style: {
+                'opacity': 0.25
+            }
+        },
+        {
+            selector: 'node.focused',
+            style: {
+                'border-width': 3,
+                'border-color': 'lightgreen'
+            }
+        }, {
+            selector: 'node.branch',
+            style: {
+                'shape': 'rectangle'
+            }
+        }, {
+            selector: 'node.canPull',
+            style: {
+                'shape': 'diamond'
+            }
+        }, {
+            selector: '.viewing',
+            style: {
+                'border-width': 3,
+                'border-color': 'SteelBlue',
+                'line-color': 'SteelBlue',
+            }
+        },
+        ],
+        userZoomingEnabled: false,
+        userPanningEnabled: false,
+        boxSelectionEnabled: false
+    })
+
+    function nodeFactory(node, classes) {
+        if (node.isActive) {
+            classes.push('isActive')
+        }
+        if (node.canPatch) {
+            classes.push('canPatch')
+        }
+        if (node.property.canPull) {
+            classes.push('canPull')
+        }
+        if (node.isExposed) {
+            classes.push('isExposed')
+        }
+        if (node.isOwner) {
+            classes.push('isOwner')
+        }
+        let output = {
+            group: 'nodes',
+            data: {
+                id: 'node' + node.id,
+                tag: node.property.tag,
+                deltaGraphId: node.property.deltaGraphId,
+                creationDate: new Date(node.property.creationDate)
+            },
+            classes: classes,
+            position: {
+                x: 0,
+                y: 0
+            },
+            grabbable: false,
+            pannable: false,
+            position: {
+                x: 0,
+                y: 0
+            }
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                id: 'edge' + edge.id,
+                source: 'node' + edge.start,
+                target: 'node' + edge.end,
+                tag: edge.type
+            }
+        }
+        return output
+
+    }
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.filter("nonStylingClasses", (value) => {
+        if (value) {
+            return value.filter(c => !["isOwner", "focused", "uselectable"].includes(c))
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            _focusedNode: null,
+            _sibling: null,
+            _variant: null,
+            _repository: null,
+            sibling: [],
+            variant: [],
+            repository: [],
+            focusedNode: null,
+            viewingId: null,
+            interactingWithSelect: false,
+            zoom: 0,
+            lastFocusedId: null,
+            url: "",
+            showMenu: false,
+            cursor_x: undefined,
+            cursor_y: undefined,
+            showSelectBar: false,
+            snackbarMethod: '',
+            _selectedNode: undefined, // this makes the vuetify not observing the object
+            selectedNodeClasses: [],
+            siblingId: [],
+            showFrame: false,
+            //{% if request.blueprint == "instructor" %}
+            workspaceCreateDialog: false,
+            tag: '',
+            tagRules: [v => !!v || 'Tag name is required',
+            v => (v && v.length > 3 && v.length < 101) ||
+                'Tag name should be anything between 4 and 100 charactors',
+            v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            //{% endif %}
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                    "{{ url_for('RESTful.tree.get', courseCode = courseCode, isInstructor = request.blueprint == 'instructor', isDLTC = request.blueprint == 'DLTC') }}", {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                            cy.remove(cy.elements())
+                            let activeNode
+                            body.trunk_nodes.forEach(node => {
+                                cyNode = cy.add(nodeFactory(node, ["trunk"]))
+                                if (node.isActive) {
+                                    activeNode = cyNode
+                                }
+                            })
+                            body.branch_nodes.forEach(node => {
+                                cy.add(nodeFactory(node, ["branch"]))
+                            })
+                            body.workspace_nodes.forEach(node => {
+                                cy.add(nodeFactory(node, ["workspace"]))
+                            })
+                            body.edges.forEach(edge => {
+                                [edge.start, edge.end].forEach(id => {
+                                    let node = cy.getElementById('node' + id)
+                                    if (node.length == 0) {
+                                        cy.add(nodeFactory({
+                                            property: {
+                                                tag: 'hidden'
+                                            },
+                                            id: id
+                                        }, ["invisible"]))
+                                    }
+                                })
+
+                                cy.add(edgeFactory(edge))
+                            })
+                            let root = cy.nodes('[tag = "init"]').filter(node => node.outgoers().length == 0)
+                            let stepX = 200
+                            let stepY = 200
+
+                            function locatePredecessorsX(node) {
+                                let thickness = 0
+                                let position = node.position()
+                                let forkEdges = node.incomers('edge[tag="FORK"]').sort((edgeA, edgeB) => {
+                                    let childA = edgeA.source()
+                                    let childB = edgeB.source()
+                                    return childA.data('creationDate') - childB.data('creationDate')
+                                })
+                                let patchEdges = node.incomers('edge[tag="PATCH"]').sort((edgeA,
+                                    edgeB) => {
+                                    let childA = edgeA.source()
+                                    let childB = edgeB.source()
+                                    return childA.data('creationDate') - childB.data('creationDate')
+                                })
+                                patchEdges.forEach(edge => {
+                                    let child = edge.source()
+                                    child.position({
+                                        x: position.x,
+                                    })
+                                    thickness = Math.max(thickness, locatePredecessorsX(child))
+                                })
+                                forkEdges.forEach(edge => {
+                                    thickness++
+                                    let child = edge.source()
+                                    child.position({
+                                        x: position.x + stepX * thickness,
+                                    })
+                                    thickness += locatePredecessorsX(child)
+                                })
+                                return thickness
+                            }
+
+                            function locatePredecessorsY(node) {
+                                let position = node.position()
+                                let fixedEdges = node.incomers('edge[tag="PATCH"],edge[tag = "FORK"]')
+                                // .filter(edge => {
+                                //     let child = edge.source()
+                                //     return child.outgoers(
+                                //         'edge[tag = "BRANCH_PULL"],edge[tag = "TRUNK_PULL"]'
+                                //     ).length == 0
+                                // });
+                                let pulledEdge = node.incomers(
+                                    'edge[tag="BRANCH_PULL"],edge[tag = "TRUNK_PULL"]')
+                                fixedEdges.forEach(edge => {
+                                    let child = edge.source()
+                                    child.position({
+                                        y: Math.max(position.y + stepY, child.position().y),
+                                    })
+                                    let pulling = child.incomers(
+                                        'edge[tag = "BRANCH_PULL"],edge[tag = "TRUNK_PULL"]'
+                                    )
+                                    if (pulling.length > 0) {
+                                        pulling.map(edge => edge.source()).forEach(puller => {
+                                            puller.position({
+                                                y: child.position().y + stepY,
+                                            })
+                                            locatePredecessorsY(puller)
+                                        }
+
+                                        )
+                                    }
+                                })
+                                pulledEdge.forEach(edge => {
+                                    let child = edge.source()
+                                    child.position({
+                                        y: Math.max(position.y + stepY, child.position().y),
+                                    })
+                                    locatePredecessorsY(child)
+                                })
+                                fixedEdges.forEach(edge => {
+                                    let child = edge.source()
+                                    locatePredecessorsY(child)
+                                })
+                            }
+
+                            function locateWorkspace(node) {
+                                let j = Math.PI * 0.75
+                                let position = node.position()
+                                let workEdges = node.incomers('edge[tag="WORK_ON"]').sort((edgeA,
+                                    edgeB) => {
+                                    let childA = edgeA.source()
+                                    let childB = edgeB.source()
+                                    return childA.data('creationDate') - childB.data('creationDate')
+                                })
+                                workEdges.forEach(edge => {
+                                    let child = edge.source()
+                                    child.position({
+                                        x: position.x + 75 * Math.cos(j),
+                                        y: position.y + 75 * Math.sin(j)
+                                    })
+                                    j = j + Math.PI / 4;
+                                })
+                                node.incomers('edge[tag!="WORK_ON"]').forEach(edge => {
+                                    let child = edge.source()
+                                    locateWorkspace(child)
+                                })
+                            }
+                            locatePredecessorsX(root)
+                            locatePredecessorsY(root)
+                            locateWorkspace(root)
+                            if (this._focusedNode == null) {
+                                this.focus(activeNode.data("id"), 0)
+                                this.setFocusedNode(activeNode, 0)
+                            }
+                            else {
+                                newFocus = cy.getElementById(this._focusedNode.data("id"))
+                                this.setFocusedNode(newFocus, 0)
+                            }
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+            },
+            selectFocusedNode() {
+                this._selectedNode = this._focusedNode
+            },
+            // {% if request.blueprint == "instructor" %}
+            readyToPush(node) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.branch.patch') }}" + node.data("deltaGraphId"), {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        canPull: !node.classes().includes("canPull")
+                    })
+                })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            toggleExposure(node) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                let isExposed = node.classes().includes("isExposed") ? false : true
+                fetch("{{ url_for('RESTful.branch.patch') }}" + node.data("deltaGraphId"), {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        isExposed: isExposed,
+                    })
+                })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+
+            },
+            mergeWithAnother(node) {
+                this.snackbarMethod = 'branch'
+                this.selectableNodes = cy.nodes(
+                    '.branch[deltaGraphId  != "' + node.data("deltaGraphId") + '"],' +
+                    '.trunk')
+                this.selectAnotherMode()
+            },
+            checkout() {
+                this.snackbarMethod = 'workspace'
+                this.selectableNodes = cy.nodes('.branch,.trunk')
+                this.selectAnotherMode()
+            },
+            createWorkspaceDialogue() {
+                this.workspaceCreateDialog = true
+            },
+            createWorkspace(node) {
+                if (this.$refs.createWorkspaceControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.workspace.post') }}" + node.data("deltaGraphId"), {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            tag: this.tag,
+                        })
+                    })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.workspaceCreateDialog = false
+                                    this.$refs.createWorkspaceControl.reset()
+                                    this.loadData()
+                                })
+                        })
+                }
+            },
+            commit(node) {
+                this.newTab("{{ url_for('instructor.commit')}}" + node.data("deltaGraphId"))
+            },
+            // {% endif %}
+            // {% if request.blueprint == "DLTC" %}
+            setActive(node) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.trunk.patch') }}" + node.data("deltaGraphId"), {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        active: true,
+                    })
+                })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            release() {
+                this.snackbarMethod = 'trunk'
+                this.selectableNodes = cy.nodes(
+                    '.branch.canPull')
+                this.selectAnotherMode()
+            },
+            // {% endif %}
+            selectAnotherMode() {
+                cy.nodes().difference(this.selectableNodes).addClass('uselectable')
+                cy.nodes().unselectify()
+                this.showSelectBar = true
+            },
+            resume() {
+                this.showSelectBar = false
+                cy.nodes(".uselectable").removeClass('uselectable')
+                cy.nodes().unselectify()
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+                if (w == null) {
+                    alert('pop up is blocked')
+                }
+                w.onbeforeunload = () => {
+                    this.loadData()
+                }
+                w.focus()
+                this.resume()
+            },
+            openFrame(eles) {
+                cy.nodes(".viewing").removeClass('viewing')
+                cy.edges(".viewing").removeClass('viewing')
+                cy.nodes().unselect()
+                cy.edges().unselect()
+                if (eles.isNode()) {
+                    if (eles.classes().includes("trunk")) {
+                        url = "{{ url_for('collegue.graphView')}}" + eles.data('deltaGraphId')
+                    }
+                    if (this._focusedNode.classes().includes("branch")) {
+                        url = "{{ url_for('collegue.graphView')}}" + eles.data('deltaGraphId')
+                    }
+                }
+                else if (eles.isEdge()) {
+                    let tag = eles.data("tag")
+                    if (tag == "FORK" || tag == "PATCH") {
+                        url = "{{ url_for('collegue.compare')}}" + eles.source().data(
+                            'deltaGraphId') + "/" + eles.target().data(
+                                'deltaGraphId')
+
+                    }
+                    else if (tag.includes("PULL")) {
+                        let parentOfSource = eles.source().connectedEdges(
+                            '[tag = "FORK"],[tag = "PATCH"]').targets('[id != "' + event.target[
+                                0]
+                                .data('id') + '"]')
+                        if (parentOfSource.length < 1) return;
+                        url = "{{ url_for('collegue.compare')}}" + eles.source().data(
+                            'deltaGraphId') + "/" + parentOfSource[0].data(
+                                'deltaGraphId')
+                    }
+                }
+                if (url) {
+                    this.viewingId = eles.data("id")
+                    eles.addClass('viewing')
+                    this.url = url
+                    this.showFrame = true
+                    this.resume()
+                }
+            },
+            focus(id, duration = 200) {
+                cy.stop()
+                cy.clearQueue()
+                this.lastFocusedId = id
+                let ele = document.getElementById('cy');
+                if (id && id != '') {
+                    cy.nodes().unselect()
+                    let node = cy.getElementById(id)
+                    animation = cy.animation({
+                        zoom: {
+                            level: 0.75 + this.zoom * 0.25,
+                            position: {
+                                x: node.position().x,
+                                y: node.position().y
+                            }
+                        },
+                        duration: duration / 2,
+                        complete: () => {
+                            cy.animation({
+                                center: {
+                                    eles: node
+                                },
+                                duration: duration / 2
+                            }).play()
+                        }
+                    })
+                } else {
+                    animation = cy.animation({
+                        fit: {
+                            padding: ele.offsetWidth * (0.05 - this.zoom * 0.01)
+                        },
+                        duration: duration
+                    })
+                }
+                animation.play()
+            },
+            setZoom(value) {
+                let oldZoom = this.zoom
+                this.zoom = this.zoom + value
+                this.zoom = Math.min(this.zoom, 1)
+                this.zoom = Math.max(this.zoom, -1)
+                this.focus(this.lastFocusedId)
+            },
+            backToFocusedNode() {
+                if (this._focusedNode) this.focus(this._focusedNode.data("id"))
+            },
+            setFocusedNodeById(id, duration = null) {
+                let node = cy.nodes('[id = "' + id + '"]')
+                if (node) {
+                    this.setFocusedNode(node, duration)
+                }
+            },
+            setFocusedNode(node, duration = null) {
+                this._sibling = node.outgoers('[tag = "FORK"]').
+                    targets().incomers('[tag = "FORK"]').sources().sort((childA, childB) => {
+                        return childA.data('creationDate') - childB.data('creationDate')
+                    })
+                this._variant = node.incomers('[tag = "FORK"]').sources().sort((childA, childB) => {
+                    return childA.data('creationDate') - childB.data('creationDate')
+                })
+                this._repository = []
+                target = node
+                while (target.outgoers('[tag = "PATCH"]').target() != null) {
+                    target = target.outgoers('[tag = "PATCH"]').target()
+                }
+                this._repository.push(target)
+                while (target.incomers('[tag = "PATCH"]').source() != null) {
+                    target = target.incomers('[tag = "PATCH"]').source()
+                    this._repository.push(target)
+                }
+                this.sibling = this._sibling.map(node => node.data())
+                this.variant = this._variant.map(node => node.data())
+                this.repository = this._repository.map(node => node.data())
+                this._focusedNode = node
+                this.focusedNode = this._focusedNode.data()
+                this.focusedNode.classes = this._focusedNode.classes()
+                cy.nodes(".focused").removeClass('focused')
+                this._focusedNode.addClass('focused')
+                if (duration != null) {
+                    this.focus(this._focusedNode.data("id"), duration)
+                }
+                else {
+                    this.focus(this._focusedNode.data("id"))
+                }
+            }
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            self = this
+            cy.on('cxttapend', 'node', (event) => {
+                console.log(event)
+                if (event.target == event.cy) return
+                self.showMenu = true
+                self.cursor_x = event.originalEvent.clientX
+                self.cursor_y = event.originalEvent.clientY
+                this._selectedNode = event.target[0]
+                this.selectedNodeClasses = event.target[0].classes()
+                cy.nodes().unselect()
+                cy.edges().unselect()
+                event.target[0].select()
+            })
+            resolveAction = (node) => {
+                // {% if request.blueprint == "instructor" %}
+                if (this.snackbarMethod == 'branch') {
+                    if (this.selectableNodes.contains(node)) {
+                        this.newTab("{{ url_for('instructor.branch')}}" + node.data(
+                            'deltaGraphId') + '/' + this._selectedNode.data("deltaGraphId"))
+                    }
+                }
+                if (this.snackbarMethod == 'workspace') {
+                    if (this.selectableNodes.contains(node)) {
+                        fetch("{{ url_for('RESTful.workspace.patch') }}" + this._selectedNode.data("deltaGraphId"), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                checkout: true,
+                                deltaGraphId: node.data(
+                                    'deltaGraphId')
+                            })
+                        })
+                            .then(response => {
+                                try {
+                                    return response.json()
+                                } catch {
+                                    this.$root.progress.show = false
+                                    this.$root.errorDisplay({},
+                                        'Unexpected error occured.')
+                                }
+                            })
+                            .then(body => {
+                                this.$root.progress.show = false
+                                this.$root.responseSnackBar(body,
+                                    'Sync failed for unknown reason.',
+                                    () => {
+                                        this.loadData()
+                                    })
+                            })
+                    }
+                }
+                // {% endif %}
+                // {% if request.blueprint == "DLTC" %}
+                if (this.snackbarMethod == 'trunk') {
+                    if (this.selectableNodes.contains(node)) {
+                        this.newTab("{{ url_for('DLTC.trunk')}}" + node.data(
+                            'deltaGraphId') + '/' + this._selectedNode.data("deltaGraphId"))
+                    }
+                }
+                // {% endif %}
+            }
+            cy.on('tap', 'node', (event) => {
+                console.log(event)
+                if (event.target == event.cy) return
+                if (this.showSelectBar) {
+                    resolveAction(event.target[0])
+                    return
+                }
+                if (event.target.classes().includes("trunk")) {
+                    this.openFrame(event.target[0])
+                    this.setFocusedNode(event.target[0])
+                }
+                if (event.target.classes().includes("branch")) {
+                    this.openFrame(event.target[0])
+                    this.setFocusedNode(event.target[0])
+                }
+                if (event.target.classes().includes("workspace")) {
+                    this.newTab("{{ url_for('instructor.workspace')}}" + event.target.data(
+                        "deltaGraphId"))
+                }
+                // {% if request.blueprint == "instructor" %}
+                // {% endif %}
+                // {% if request.blueprint == "DLTC" %}
+                // {% endif %}
+            })
+            cy.on('tap', 'edge', (event) => {
+                let tag = event.target[0].data("tag")
+                if (tag == "FORK" || tag == "PATCH" || tag.includes("PULL")) {
+                    this.openFrame(event.target[0])
+                }
+            })
+            window.addEventListener('keydown', (event) => {
+                if (this.interactingWithSelect) { return }
+                if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+                    let nodeList
+                    let nodeListIndex
+                    if (this._sibling.length == 0) {
+                        nodeList = this._variant
+                        if (nodeList.length == 0) {
+                            return
+                        }
+                        if (event.key == "ArrowLeft") {
+                            nodeListIndex = nodeList.length
+                        }
+                        if (event.key == "ArrowRight") {
+                            nodeListIndex = -1
+                        }
+                    }
+                    else {
+                        nodeList = this._sibling
+                        let i = 0
+                        nodeList.every((node) => {
+                            if (node.data("id") == this._focusedNode.data("id")) {
+                                nodeListIndex = i
+                                return false
+                            }
+                            i++
+                            return true
+                        })
+                    }
+                    if (event.key == "ArrowLeft") {
+                        nodeListIndex--
+                    }
+                    if (event.key == "ArrowRight") {
+                        nodeListIndex++
+                    }
+                    if (nodeListIndex < 0 || nodeListIndex >= nodeList.length) {
+                        this.setFocusedNode(this._focusedNode.outgoers('[tag = "FORK"]').
+                            targets()[0])
+                    } else {
+                        this.setFocusedNode(nodeList[nodeListIndex])
+                    }
+                }
+                if (event.key == "ArrowUp" || event.key == "ArrowDown") {
+                    let nodeList = this._repository
+                    let nodeListIndex
+                    let i = 0
+                    nodeList.every((node) => {
+                        if (node.data("id") == this._focusedNode.data("id")) {
+                            nodeListIndex = i
+                            return false
+                        }
+                        i++
+                        return true
+                    })
+                    if (event.key == "ArrowUp") {
+                        nodeListIndex--
+                    }
+                    if (event.key == "ArrowDown") {
+                        nodeListIndex++
+                    }
+                    if (nodeListIndex < 0) {
+                        nodeListIndex = nodeList.length - 1
+                    } else if (nodeListIndex >= nodeList.length) {
+                        nodeListIndex = 0
+                    }
+                    this.setFocusedNode(nodeList[nodeListIndex])
+                }
+                if (event.key == "Escape") {
+                    this.showFrame = false
+                }
+                if (event.key == "Enter") {
+                    if (this.showSelectBar) {
+                        resolveAction(this._focusedNode)
+                        return
+                    }
+                    else {
+                        this.openFrame(this._focusedNode)
+                    }
+                }
+            })
+            this.$refs.iframe.addEventListener('onCloseWindow', () => {
+                this.loadData()
+            }, false);
+
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

@@ -1,0 +1,194 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-container>
+    <v-row>
+        <v-col>
+            <kcube-bookmark></kcube-bookmark>
+        </v-col>
+    </v-row>
+    <v-row>
+        <v-col style="padding-top: 0px; padding-bottom: 0px;">
+            <v-divider style="top: 40%; position: relative;"></v-divider>
+        </v-col>
+        <v-col cols="auto" style="padding-top: 0px; padding-bottom: 0px;">
+            <v-tooltip top>
+                <template v-slot:activator="{ on: tooltip }">
+                    <v-btn icon v-on="tooltip" @click="move = !move">
+                        <v-icon v-show="move">domain_verification</v-icon>
+                        <v-icon v-show="!move">web_asset</v-icon>
+                    </v-btn>
+                </template>
+                Drag or resize widget
+            </v-tooltip>
+        </v-col>
+        <v-col cols="auto" style="padding-top: 0px; padding-bottom: 0px;">
+            <v-bottom-sheet inset>
+                <template v-slot:activator="{ on: sheet, attrs }">
+                    <v-tooltip top>
+                        <template v-slot:activator="{ on: tooltip }">
+                            <v-btn icon v-bind="attrs" v-on="{...sheet,...tooltip}">
+                                <v-icon>widgets</v-icon>
+                            </v-btn>
+                        </template>
+                        Add or remove widget
+                    </v-tooltip>
+                </template>
+                <v-sheet>
+                    <v-select v-model="chosenWidget" :items="$root.KCube.widgetName" label="widget" multiple
+                        @change="updageWidget()" hint="Choose your widget" persistent-hint>
+                        <template v-slot:selection="{ attrs, item, select, selected }">
+                            <v-chip v-bind="attrs" :input-value="selected" close @click="select"
+                                @click:close="removeWidget(item)">
+                                <strong>${ item }</strong>
+                            </v-chip>
+                        </template>
+                    </v-select>
+                </v-sheet>
+            </v-bottom-sheet>
+        </v-col>
+    </v-row>
+    <v-row v-if="layout">
+        <grid-layout style="width:100%" :layout.sync="layout" :col-num="3" :row-height="300" :is-draggable="true"
+            :is-resizable="true" :vertical-compact="true" :margin="[10, 10]" :use-css-transforms="true"
+            @layout-updated="setLocal">
+            <grid-item :resizeOption="{edges: {left: false, right: true, bottom: true, top: false }}"
+                :isResizable="move" drag-allow-from=".vue-draggable-handle" drag-ignore-from=".no-drag"
+                v-for="item in layout" :x="item.x" :y="item.y" :w="item.w" :h="item.h" :i="item.i" :key="item.i"
+                :max-w="item?.maxW" :max-h="item?.maxH" :min-w="item?.minW" :min-h="item?.minH">
+                <v-card style="height:100%;width:100%;">
+                    <span
+                        style="position: absolute; z-index: 500; pointer-events: none; height: 24px">${item.widgetName}</span>
+                    <v-expand-transition>
+                        <v-app-bar dense class="vue-draggable-handle" flat dense v-show="move">
+                            <v-spacer></v-spacer>
+                            <v-icon small right @click="removeWidget(component2name(item.i))">close
+                            </v-icon>
+                        </v-app-bar>
+                    </v-expand-transition>
+                    <v-card-text
+                        :style="{width:'100%', height: move?'calc(100% - 48px)':'calc(100% - 24px)', position: 'absolute', bottom: 0, padding: 0}">
+                        <component class="no-drag" v-bind:is="item.i"></component>
+                    </v-card-text>
+                </v-card>
+            </grid-item>
+        </grid-layout>
+    </v-row>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    var dashboardOption = {
+        fetchOption: {
+            cache: "default",
+            headers: {
+                'Content-Type': 'application/json',
+                "Cache-Control": "max-age=300"
+            },
+        }
+    }
+</script>
+{% block widget %} {% endblock %}
+{{ layout.echartsCDN() }}
+{% import 'component/myFavorite.html' as myFavorite %}
+{{ myFavorite.component()}}
+{{ myFavorite.script()}}
+<style>
+    .vue-grid-item.vue-grid-placeholder {
+        background: grey !important;
+    }
+</style>
+{{ layout.vueGridLayout()}}
+<script>
+    var layoutName = "{{request.blueprint}}" + '-dashboard-layout'
+    Vue.component('app-content', {
+        data: () => ({
+            layout: [],
+            move: false,
+            chosenWidget: []
+        }),
+        methods: {
+            initializeLayout() {
+                let option = localStorage.getItem(layoutName)
+                if (option != null) this.layout = JSON.parse(option)
+            },
+            setLocal() {
+                let option = JSON.stringify(this.layout)
+                localStorage.setItem(layoutName, option)
+            },
+            removeWidget(name) {
+                if (!name || name === '') return
+                this.chosenWidget.splice(this.chosenWidget.indexOf(name), 1)
+                this.chosenWidget = [...this.chosenWidget]
+                this.updageWidget()
+            },
+            updageWidget() {
+                //remove obsolete widget
+                let validComponent = Object.keys(KCube.widgetOptions).map(name => KCube.widgetOptions[name]
+                    .component)
+                this.layout = this.layout.filter(widget => validComponent.includes(widget.i))
+                //remove widget from layoute that is not in chosenWidget
+                KCube.widgetName.filter(name => !this.chosenWidget.includes(name)).forEach(name => {
+                    this.layout = this.layout.filter(widget => widget.i != KCube.widgetOptions[name]
+                        .component)
+                })
+                //add widget to layout that is in chosenWidget but not in layout
+                this.chosenWidget.filter(name => this.layout.filter(widget => widget.i ==
+                    KCube.widgetOptions[name].component).length == 0).forEach(name => {
+                    let option = {
+                        x: 0,
+                        y: 0,
+                        w: KCube.widgetOptions[name].minW ? KCube.widgetOptions[name].minW : 1,
+                        h: KCube.widgetOptions[name].minH ? KCube.widgetOptions[name].minH : 1,
+                        i: KCube.widgetOptions[name].component
+                    }
+                    option = {
+                        ...option,
+                        ...KCube.widgetOptions[name]
+                    }
+                    this.layout.push(option)
+                })
+                this.setLocal()
+            },
+            component2name(component) {
+                return Object.keys(KCube.widgetOptions).filter(name => KCube.widgetOptions[name]
+                    .component ==
+                    component)[0]
+            },
+        },
+        mounted() {
+            this.initializeLayout()
+            //remove obsolete widget
+            let validComponent = Object.keys(KCube.widgetOptions).map(name => KCube.widgetOptions[name]
+                .component)
+            this.layout = this.layout.filter(widget => validComponent.includes(widget.i))
+
+            //update widget option, specifically minW minH maxW maxH
+            this.layout = this.layout.map(widget => {
+                let name = Object.keys(KCube.widgetOptions).filter(n => KCube.widgetOptions[n]
+                    .component == widget.i)[0]
+                let {
+                    w,
+                    h,
+                    ...option
+                } = KCube.widgetOptions[name]
+                widget = {
+                    ...widget,
+                    ...option
+                }
+                if (widget.minW) widget.w = Math.max(widget.w, widget.minW)
+                if (widget.minH) widget.h = Math.max(widget.h, widget.minH)
+                if (widget.maxW) widget.w = Math.min(widget.w, widget.maxW)
+                if (widget.maxH) widget.h = Math.min(widget.h, widget.maxH)
+                return widget
+            })
+            //initialize chosenWidget
+            this.chosenWidget = this.layout.map(widget => widget.i).map(component =>
+                this.component2name(component)
+            )
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

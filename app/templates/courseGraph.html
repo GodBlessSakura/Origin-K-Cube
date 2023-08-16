@@ -1,0 +1,773 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<div>
+    <div id="cy" style="height: calc(100vh - 64px); width: 100%;"></div>
+    <v-bottom-sheet v-model="metricsBottomSheet" insert :hide-overlay="true" no-click-animation>
+        <kcube-metrics-visualize-bottom-sheet></kcube-metrics-visualize-bottom-sheet>
+    </v-bottom-sheet>
+    <v-sheet v-if="!inIframe" style="position: absolute; top:3vh;left:3vh; ">
+        <v-slide-group show-arrows>
+            <v-slide-item>
+                <v-select outlined item-value="userId" item-text="userName" :items="providers" :value="'{{userId}}' == 'None'? null :
+                '{{userId}}'" @change="goToUserGraph">
+                </v-select>
+            </v-slide-item>
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed @click="downloadPNG()">
+                            <v-icon>photo_camera</v-icon>
+                        </v-btn>
+                    </template>
+                    graph capture
+                </v-tooltip>
+            </v-slide-item>
+            {% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-menu offset-y>
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-btn fab depressed v-on="on">
+                                    <v-icon>download</v-icon>
+                                </v-btn>
+                            </template>
+                            <v-list v-if="triples">
+                                <v-list-item @click="copyJson()">
+                                    <v-list-item-title>json</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>content_copy</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="copyCsv()">
+                                    <v-list-item-title>csv</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>content_copy</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="downloadJson()">
+                                    <v-list-item-title>json</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>download</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="downloadCsv()">
+                                    <v-list-item-title>csv</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>download</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                            </v-list>
+                        </v-menu>
+                    </template>
+                    export
+                </v-tooltip>
+            </v-slide-item>
+            {% endif %}
+            <v-slide-item v-if="!inIframe">
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed v-on="on" @click="metricsBottomSheet = true">
+                            <v-icon>insights</v-icon>
+                        </v-btn>
+                    </template>
+                    centrality metrics
+                </v-tooltip>
+            </v-slide-item>
+            <v-slide-item>
+                <v-dialog max-width="700px">
+                    <template v-slot:activator="{ on: menu, attrs }">
+                        <v-tooltip top>
+                            <template v-slot:activator="{ on: tooltip }">
+                                <v-btn fab depressed v-bind="attrs" v-on="{ ...tooltip, ...menu }">
+                                    <v-icon>palette</v-icon>
+                                </v-btn>
+                            </template>
+                            graph<br>display<br>options
+                        </v-tooltip>
+                    </template>
+                    <kcube-cy-options-dialog></kcube-cy-options-dialog>
+                </v-dialog>
+            </v-slide-item>
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed v-on="on"
+                            href="{{ url_for('coursePlan', courseCode = courseCode, userId = userId) }}">
+                            <v-icon>calendar_today</v-icon>
+                        </v-btn>
+                    </template>
+                    course plan
+                </v-tooltip>
+            </v-slide-item>
+            {% if PERMISSION and PERMISSION.role and "instructor" in PERMISSION.role %}
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed v-on="on"
+                            href="{{ url_for('instructor.repositories', courseCode = courseCode) }}">
+                            <v-icon>table_view</v-icon>
+                        </v-btn>
+                    </template>
+                    repositories
+                </v-tooltip>
+            </v-slide-item>
+            {% endif %}
+        </v-slide-group>
+    </v-sheet>
+    <v-dialog v-model="entityDialogue" content-class="dialogueIframe" transition="slide-x-reverse-transition"
+        hide-overlay persistent no-click-animation eager>
+        <iframe ref="entityIframe" style="height: 100%; width:100%" frameBorder="0"></iframe>
+    </v-dialog>
+    <v-dialog v-model="relationshipDialogue" content-class="dialogueIframe" transition="slide-x-reverse-transition"
+        hide-overlay persistent no-click-animation eager>
+        <iframe ref="relationshipIframe" style="height: 100%; width:100%" frameBorder="0"></iframe>
+    </v-dialog>
+    <v-bottom-sheet v-model="sheet" v-if="!inIframe" inset>
+        <template v-slot:activator="{ on, attrs }">
+            <v-bottom-sheet :value="!sheet" :retain-focus="false" inset persistent hide-overlay no-click-animation>
+                <v-sheet>
+                    <v-card-subtitle v-show="course">
+                        ${courseCode} - ${course?.courseName} (by ${"{{userId}}" == "None"? "Department" :
+                        "{{userId}}"})
+                    </v-card-subtitle>
+                    <v-btn :ripple="false" color="success" plain block elevation="2" @click="sheet = true">
+                        info, graphs and more
+                        <v-icon right>
+                            expand_less
+                        </v-icon>
+                    </v-btn>
+                </v-sheet>
+            </v-bottom-sheet>
+        </template>
+        <v-sheet>
+            <v-container>
+                <v-row>
+                    <v-btn :ripple="false" color="error" plain block @click="sheet = false" elevation="2">
+                        dismiss
+                        <v-icon right>
+                            expand_more
+                        </v-icon>
+                    </v-btn>
+                </v-row>
+                <v-row>
+                    <v-img contain :src="course?.imageURL" height="200px"></v-img>
+                </v-row>
+                <v-row>
+                    <v-card-title>
+                        ${courseCode} - ${course?.courseName}
+                    </v-card-title>
+                </v-row>
+                <v-row v-if="!hideGraph">
+                    <v-card-title>
+                        Public graph provided by:
+                    </v-card-title>
+                </v-row>
+                <v-row v-for="row in rows" v-if="!hideGraph">
+                    <v-col v-for="col in row" cols="3" class="d-flex" style="flex-direction:column" v-if="col.userName">
+                        <v-btn v-if="col.isViewing" x-small
+                            style="position: fixed;  transform: translate(5%,-50%); z-index:2" rounded color="black"
+                            elevation="0" class="white--text">
+                            <v-icon x-small>visibility</v-icon>&nbsp;
+                            is viewing
+                        </v-btn>
+                        <v-btn outlined large v-if="isPageInIFrame"
+                            @click="newTab('{{ url_for('courseGraph') }}' + courseCode + (col.userId != null ? '/' + col.userId : ''))"
+                            @click.middle="newTab('{{ url_for('courseGraph') }}' + courseCode + (col.userId != null ? '/' + col.userId : ''))">
+                            ${col.userName}
+                        </v-btn>
+                        <v-btn outlined large v-else
+                            :href="'{{ url_for('courseGraph') }}' + courseCode + (col.userId != null ? '/' + col.userId : '')">
+                            ${col.userName}
+                        </v-btn>
+
+                    </v-col>
+                </v-row>
+                {% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                <v-row>
+                    <v-col cols="auto">
+                        <v-card-subtitle>
+                            Last-visited workspace:
+                        </v-card-subtitle>
+                    </v-col>
+                    <v-col cols="auto">
+                        <v-btn v-if="lastModifiedWorkspace===undefined">
+                            <v-progress-circular indeterminate></v-progress-circular>
+                        </v-btn>
+                        <v-btn v-else-if="lastModifiedWorkspace" style="height: 48px;"
+                            :href="'{{ url_for('instructor.workspace')}}' + lastModifiedWorkspace.deltaGraphId">
+                            <v-icon>work</v-icon>
+                        </v-btn>
+                        <v-btn v-else @click="openWorkspaceDialogue()">create workspace</v-btn>
+                    </v-col>
+                    <v-col v-if="lastModifiedWorkspace" cols="auto">
+                        <v-card-subtitle>
+                            workspace tag: ${lastModifiedWorkspace.tag}
+                        </v-card-subtitle>
+                    </v-col>
+                    <v-col cols="auto">
+                        <v-card-subtitle>
+                            Create workspace:
+                        </v-card-subtitle>
+                    </v-col>
+                    <v-col cols="auto">
+                        <v-btn @click="openWorkspaceDialogue()">create workspace <v-icon>add_box</v-icon>
+                        </v-btn>
+                    </v-col>
+                </v-row>
+                <v-row>
+                    <v-col cols="auto">
+                        <v-card-subtitle>
+                            Duty-status:
+                        </v-card-subtitle>
+                    </v-col>
+                    <v-col cols="auto">
+                        <v-btn :outlined="!isTeaching" :color="isTeaching?'success':'grey'"
+                            @click="isTeaching?quit(courseCode):join(courseCode)">
+                            <v-icon v-if="isTeaching" left>check</v-icon>
+                            ${isTeaching?'on-duty':'off-duty'}
+                        </v-btn>
+                    </v-col>
+                </v-row>
+                <v-dialog v-model="workspaceDialogue" max-width="500px" eager>
+                    <kcube-workspace-form ref="workspaceForm"></kcube-workspace-form>
+                </v-dialog>
+                {% endif %}
+            </v-container>
+        </v-sheet>
+    </v-bottom-sheet>
+</div>
+{% endblock %}
+{% block VueComponentScript %}
+{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+{% include "instructor/components/workspaceForm.html" %}
+{% endif %}
+{{ layout.cytoscapeCDN() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<style>
+    .dialogueIframe {
+        height: 70vh;
+        padding: unset;
+        width: 60vw;
+        max-height: unset !important;
+        position: absolute;
+        margin: unset;
+        overflow: clip;
+    }
+</style>
+<script>
+    cy = cytoscape({
+        style: cyStyles.simpleStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    })
+    cytoscapeInstance = [{
+        cy: cy,
+        edgeSelector: "[value = 'true']",
+        options: "simpleStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: 64,
+        edgeElasticity: 128,
+        gravity: 0.15,
+        numIter: 750,
+        initialTemp: 2000,
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name + '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({
+            inIframe: window.location !== window.parent.location,
+            triples: null,
+            metricsBottomSheet: false,
+            entityDialogue: false,
+            relationshipDialogue: false,
+            course: null,
+            isPageInIFrame: window.location != window.parent.location,
+            rows: [
+                []
+            ],
+            hideGraph: new URLSearchParams(window.location.search).get('hideGraph') != null,
+            courseCode: "{{courseCode}}",
+            sheet: false,
+            providers: [],
+            //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+            lastModifiedWorkspace: undefined,
+            //{% endif %}
+            workspaceDialogue: false,
+            isTeaching: null
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                this.lastModifiedWorkspace = undefined
+                let promises = []
+                promises.push(
+                    fetch(
+                        "{{ url_for('RESTful.triple.getCourse', courseCode = courseCode, userId = userId) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.course && body.triples) {
+                            let visited = JSON.parse(localStorage.getItem('visitedCourseGraph'))
+                            if (!visited) {
+                                visited = {}
+                            }
+                            visited["{{courseCode}}" + "_" + "{{userId}}"] = location.href
+                            console.log(JSON.stringify(visited))
+                            localStorage.setItem('visitedCourseGraph', JSON.stringify(visited))
+                            cy.add(nodeFactory('{{ courseCode }}', ["course"]))
+                                .data(
+                                    'imageURL',
+                                    body.course.imageURL,
+                                ).data('name', body.course.diaplsyName)
+                            this.triples = body.triples
+                            body.triples.forEach(triple => {
+                                if (triple.r_value) {
+                                    [triple.h_name, triple.t_name].forEach(
+                                        name => {
+                                            if (cy.getElementById(name).length == 0) {
+                                                cy.add(nodeFactory(name))
+                                            }
+                                        })
+                                    cy.add(edgeFactory(triple))
+                                }
+                            })
+                            cy.elements().style('visibility', 'hidden')
+
+                            let cyLayout = cy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return cyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            cyLayout.one('layoutstop', function () {
+                                let initOption = {
+                                    ...coseLayoutOptions
+                                }
+                                initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                                initOption.numIter = Math.floor(initOption.numIter / 4)
+                                initOption.animate = false
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    let initOption = {
+                                        ...coseLayoutOptions
+                                    }
+                                    initOption.animate = false
+                                    cyLayout = cy.layout(initOption)
+                                    cyLayout.one('layoutstop', () => {
+                                        cy.elements().style('visibility',
+                                            'visible')
+                                    })
+                                    cyLayout.run()
+                                })
+                                cyLayout.run()
+                            })
+                            cyLayout.run()
+                        } else {
+                            let visited = JSON.parse(localStorage.getItem('visitedCourseGraph'))
+                            if (!visited) {
+                                visited = {}
+                            }
+                            delete visited["{{courseCode}}" + "_" + "{{userId}}"]
+                            console.log(JSON.stringify(visited))
+                            localStorage.setItem('visitedCourseGraph', JSON.stringify(visited))
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                )
+                promises.push(
+                    fetch(
+                        "{{ url_for('RESTful.course.query', graphs=True, courseCode = courseCode) | safe }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.instructors) {
+                            this.providers = body.instructors
+                            this.providers.push({
+                                userName: 'department',
+                                userId: null,
+                            })
+                            this.rows = [
+                                []
+                            ]
+                            let colPerRow = 4
+                            this.isTeaching = body.instructors.map(instructor => instructor.userId)
+                                .includes("{{USER.userId}}")
+                            this.providers.forEach(instructor => {
+                                let lastRow = this.rows[this.rows.length - 1]
+                                if (lastRow.length == colPerRow) {
+                                    this.rows.push([])
+                                    lastRow = this.rows[this.rows.length - 1]
+                                }
+                                lastRow.push({
+                                    ...instructor,
+                                    isViewing: instructor.userId == "{{userId}}" ||
+                                        ("{{userId}}" == "None" && instructor.userId ==
+                                            null)
+                                })
+
+                            })
+                            let lastRow = this.rows[this.rows.length - 1]
+                            while (lastRow.length < colPerRow) {
+                                lastRow.push({})
+                            }
+                            console.log(this.rows)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                )
+                promises.push(
+                    fetch(
+                        "{{ url_for('RESTful.course.get',  courseCode = courseCode) | safe }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.course) {
+                            this.course = body.course
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                )
+                //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+                promises.push(
+                    fetch(
+                        "{{ url_for('RESTful.workspace.query', lastModified=True, courseCode = courseCode) | safe }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        let colPerRow = 4
+                        if (body.workspaces) {
+                            if (body.workspaces.length > 0) {
+                                this.lastModifiedWorkspace = body.workspaces[0]
+                            } else {
+                                this.lastModifiedWorkspace = null
+                            }
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting workspace information.')
+                        }
+                    })
+                )
+                promises.push(
+                    fetch("{{ url_for('RESTful.course.courseInstructor', courseCode=courseCode) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.instructors) {
+                            this.isTeaching = body.instructors.filter(instructor => instructor
+                                    .isTeaching)
+                                .map(instructor => instructor.user.userId).includes("{{USER.userId}}")
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting instructor assignment information.')
+                        }
+
+                    })
+                )
+                //{% endif %}
+                Promise.all(promises).then(bodies => {
+
+                }).finally(() => {
+                    this.$root.progress.show = false
+                })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            },
+            openEntityDialogue(id) {
+                this.$refs.entityIframe.src = "{{ url_for('concept')}}" + id
+                this.entityDialogue = true
+            },
+            openRelationshipDialogue(h, r, t) {
+                this.$refs.relationshipIframe.src = "{{ url_for('relationship')}}" + [h, r, t].join('/')
+                this.relationshipDialogue = true
+            },
+            copyJson() {
+                this.copy(
+                    JSON.stringify(this.triples), 'json')
+            },
+            copyCsv() {
+                this.copy(this.triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadJson() {
+                this.download(
+                    JSON.stringify(this.triples), 'json')
+            },
+            downloadCsv() {
+                this.download(this.triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadPNG() {
+                var a = document.createElement("a");
+                a.href = cy.png({
+                    bg: cyStyles.simpleStyle[0].style["background-color"],
+                    full: true,
+                })
+                a.download = this.courseCode + "-{{userId if userId is not none else 'department'}}-" + (
+                    new Date()).toLocaleString(
+                    "en-US", {}) + ".png"
+                a.click()
+                console.log(cy.png())
+            },
+            copy(str, format) {
+                console.log(str)
+                navigator.clipboard.writeText(str).then(() => {
+                    this.$root.responseSnackBar({
+                        success: true,
+                        message: format + ' copied to clipboard'
+                    })
+                })
+            },
+            download(str, format) {
+                console.log(str)
+                var element = document.createElement('a');
+                element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(str));
+                element.setAttribute('download', this.courseCode + '-' + (new Date()).toLocaleString(
+                        "en-US", {}) + '.' +
+                    format);
+
+                element.style.display = 'none';
+                document.body.appendChild(element);
+
+                element.click();
+
+                document.body.removeChild(element);
+            },
+            goToUserGraph(userId) {
+                window.location.href = "{{ url_for('courseGraph') }}" + this.courseCode + (userId !=
+                    null ? '/' +
+                    userId : '')
+            },
+            //{% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+            openWorkspaceDialogue() {
+                this.$refs.workspaceForm.loadData(this.courseCode);
+                this.workspaceDialogue = true;
+            },
+
+            join(courseCode) {
+                this.$root.actionDisplay("You are joining " + courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: true
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.isTeaching = true
+                                })
+
+                        })
+                })
+            },
+            quit(courseCode) {
+                this.$root.actionDisplay("You are quiting " + courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: false
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.isTeaching = false
+                                })
+                        })
+                })
+            },
+            //{% endif %}
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            self = this
+            cy.on('tap', 'node', (event) => {
+                if (event.target == event.cy || this.inIframe) return
+                this.openEntityDialogue(event.target[0].data('id'))
+            })
+            cy.on('tap', 'edge', (event) => {
+                if (event.target == event.cy || this.inIframe) return
+                this.openRelationshipDialogue(event.target[0].source().data('id'), event.target[0]
+                    .data(
+                        "name"), event.target[0].target().data('id'))
+            })
+            document.body.addEventListener("mouseup", (event) => {
+                self.entityDialogue = false
+                self.relationshipDialogue = false
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

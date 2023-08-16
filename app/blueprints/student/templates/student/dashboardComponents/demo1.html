@@ -1,0 +1,32 @@
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;">
+    demo1
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-instructor-demo1">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    (() => {
+        widgetName = 'demo1'
+        widgetComponentName = 'kcube-instructor-demo1'
+        KCube.widgetName.push(widgetName)
+        KCube.widgetOptions[widgetName] = {
+            component: widgetComponentName
+        }
+    })();
+    Vue.component(widgetComponentName, {
+        data: () => ({
+        }),
+        methods: {
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

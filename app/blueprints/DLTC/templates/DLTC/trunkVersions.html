@@ -1,0 +1,152 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="trunk" :items-per-page="500"
+                multi-sort :search="search">
+                <template v-slot:item.isActive="{ item }">
+                    <v-checkbox v-model="item.isActive" @click="setActive(item.deltaGraphId)">
+                    </v-checkbox>
+                </template>
+                <template v-slot:item.actions="{ item }">
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn icon v-bind="attrs" v-on="on" @click="newTab(item.link)">
+                                <v-icon>
+                                    open_in_new
+                                </v-icon>
+                            </v-btn>
+                        </template>
+                        view
+                    </v-tooltip>
+                </template>
+            </v-data-table>
+        </v-row>
+    </v-container>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+            search: new URLSearchParams(window.location
+                .search).get('concept'),
+            headers: [{
+                text: 'tag',
+                value: 'tag',
+                groupable: false,
+            },
+            {
+                text: 'Active',
+                value: 'isActive',
+                groupable: false,
+            },
+            {
+                text: '',
+                value: 'actions',
+                groupable: false,
+            },
+            ],
+            activeTrunk: undefined,
+            selectedNode: undefined,
+            trunk: [],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get', courseCode = courseCode, isInstructor = True, isDLTC = False) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.trunk = []
+                            if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                                body.trunk_nodes.sort(function (a, b) {
+                                    return new Date(b.creationDate) - new Date(a
+                                        .creationDate);
+                                }).forEach(node => {
+                                    let parent = body.trunk_nodes.filter(t => {
+                                        return body.edges.filter(e => e.start == node.id &&
+                                            e.end == t.id).length >
+                                            0
+                                    })[0]
+                                    let trunkVersion = {
+                                        tag: node.property.tag,
+                                        deltaGraphId: node.property.deltaGraphId,
+                                        link: "{{ url_for('collegue.graphView')}}" +
+                                            node.property
+                                                .deltaGraphId,
+                                        isActive: node.isActive
+                                    }
+                                    this.trunk.push(trunkVersion)
+                                })
+
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error on getting versions information.')
+                            }
+                        })
+                Promise.all([treePromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            setActive(deltaGraphId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.trunk.patch') }}" + deltaGraphId, {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        active: true,
+                    })
+                })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            }
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

@@ -1,0 +1,353 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-card style="height: 100%; width: 100%;">
+    <div id="cy" style="height: 100%; width: 100%;"></div>
+    <v-sheet style="position: absolute; top:3vh;left:3vh; ">
+        <v-slide-group show-arrows>
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed @click="downloadPNG()">
+                            <v-icon>photo_camera</v-icon>
+                        </v-btn>
+                    </template>
+                    graph capture
+                </v-tooltip>
+            </v-slide-item>
+            {% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "DLTC" in PERMISSION.role or "instructor" in PERMISSION.role) %}
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-menu offset-y>
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-btn fab depressed v-on="on">
+                                    <v-icon>content_copy</v-icon>
+                                </v-btn>
+                            </template>
+                            <v-list v-if="triples">
+                                <v-list-item @click="copyJson()">
+                                    <v-list-item-title>json</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>content_copy</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="copyCsv()">
+                                    <v-list-item-title>csv</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>content_copy</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="downloadJson()">
+                                    <v-list-item-title>json</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>download</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                                <v-list-item @click="downloadCsv()">
+                                    <v-list-item-title>csv</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>download</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                            </v-list>
+                        </v-menu>
+                    </template>
+                    export
+                </v-tooltip>
+            </v-slide-item>
+            {% endif %}
+            <v-slide-item>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed v-on="on" @click="metricsBottomSheet = true">
+                            <v-icon>insights</v-icon>
+                        </v-btn>
+                    </template>
+                    centrality metrics
+                </v-tooltip>
+            </v-slide-item>
+            <v-slide-item>
+                <v-dialog max-width="700px">
+                    <template v-slot:activator="{ on: menu, attrs }">
+                        <v-tooltip top>
+                            <template v-slot:activator="{ on: tooltip }">
+                                <v-btn fab depressed v-bind="attrs" v-on="{ ...tooltip, ...menu }">
+                                    <v-icon>palette</v-icon>
+                                </v-btn>
+                            </template>
+                            graph<br>display<br>options
+                        </v-tooltip>
+                    </template>
+                    <kcube-cy-options-dialog></kcube-cy-options-dialog>
+                </v-dialog>
+            </v-slide-item>
+            <v-slide-item v-if="graph">
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn fab depressed v-on="on"
+                            :href="'{{ url_for('instructor.repositories') }}' + graph.courseCode">
+                            <v-icon>table_view</v-icon>
+                        </v-btn>
+                    </template>
+                    repositories
+                </v-tooltip>
+            </v-slide-item>
+        </v-slide-group>
+    </v-sheet>
+    <v-dialog v-model="entityDialogue" content-class="entityPage" transition="slide-x-reverse-transition" hide-overlay
+        persistent no-click-animation>
+        <iframe ref="iframe" style="height: 100%; width:100%" frameBorder="0" src=""></iframe>
+    </v-dialog>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<style>
+    .entityPage {
+        height: 70vh;
+        padding: unset;
+        width: 60vw;
+        max-height: unset !important;
+        position: absolute;
+        margin: unset;
+        overflow: clip;
+    }
+</style>
+<script>
+    cy = cytoscape({
+        style: cyStyles.simpleStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    })
+    cytoscapeInstance = [{
+        cy: cy,
+        edgeSelector: "[value = 'true']",
+        options: "simpleStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: 64,
+        edgeElasticity: 128,
+        gravity: 0.15,
+        numIter: 750,
+        initialTemp: 2000,
+    }
+
+    function nodeFactory(name, classes) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            classes: classes,
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name + '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({
+            triples: null,
+            metricsBottomSheet: false,
+            entityDialogue: true,
+            graph: null
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                        "{{ url_for('RESTful.graph.get', deltaGraphId = deltaGraphId) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.graph && body.triples) {
+                            this.graph = body.graph
+                            this.triples = body.triples
+                            cy.add(nodeFactory(body.graph.courseCode, ["course"]))
+                                .data(
+                                    'imageURL',
+                                    body.graph.imageURL,
+                                )
+                            body.triples.forEach(triple => {
+                                if (!triple.r_value) return;
+                                [triple.h_name, triple.t_name].forEach(
+                                    name => {
+                                        if (cy.getElementById(name).length == 0) {
+                                            cy.add(nodeFactory(name))
+                                        }
+                                    })
+                                cy.add(edgeFactory(triple))
+                            })
+                            cy.elements().style('visibility', 'hidden')
+                            let cyLayout = cy.layout({
+                                ...concentricLayoutOptions,
+                                // concentric: function (node) {
+                                //     return cyDijkstra.distanceTo(node) * -1
+                                // }
+                            })
+                            cyLayout.one('layoutstop', function () {
+                                let initOption = {
+                                    ...coseLayoutOptions
+                                }
+                                initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                                initOption.numIter = Math.floor(initOption.numIter / 4)
+                                initOption.animate = false
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    let initOption = {
+                                        ...coseLayoutOptions
+                                    }
+                                    initOption.animate = false
+                                    cyLayout = cy.layout(initOption)
+                                    cyLayout.one('layoutstop', () => {
+                                        cy.elements().style('visibility', 'visible')
+                                    })
+                                    cyLayout.run()
+                                })
+                                cyLayout.run()
+                            })
+                            cyLayout.run()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+            },
+            newTab(keyword) {
+                this.$refs.iframe.src = "{{ url_for('concept')}}" + id
+                this.entityDialogue = true
+            },
+            copyJson() {
+                this.copy(
+                    JSON.stringify(this.triples), 'json')
+            },
+            copyCsv() {
+                this.copy(this.triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadJson() {
+                this.download(
+                    JSON.stringify(this.triples), 'json')
+            },
+            downloadCsv() {
+                this.download(this.triples.filter(t => t.r_value).map(t => [t.h_name, t.r_name, t
+                        .t_name
+                    ]
+                    .join(
+                        ',')).join('\n'), 'csv')
+            },
+            downloadPNG() {
+                var a = document.createElement("a");
+                a.href = cy.png({
+                    bg: cyStyles.simpleStyle[0].style["background-color"],
+                    full: true,
+                })
+                a.download = this.graph.courseCode + '-' + this.graph.deltaGraphId + ".png"
+                a.click()
+                console.log(cy.png())
+            },
+            copy(str, format) {
+                console.log(str)
+                navigator.clipboard.writeText(str).then(() => {
+                    this.$root.responseSnackBar({
+                        success: true,
+                        message: format + ' copied to clipboard'
+                    })
+                })
+            },
+            download(str, format) {
+                console.log(str)
+                var element = document.createElement('a');
+                element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(str));
+                element.setAttribute('download', this.graph.courseCode + '-' + this.graph.deltaGraphId + '.' +
+                    format);
+
+                element.style.display = 'none';
+                document.body.appendChild(element);
+
+                element.click();
+
+                document.body.removeChild(element);
+            },
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            self = this
+            this.$nextTick(function () {
+                this.entityDialogue = false
+            })
+            cy.on('tap', 'node', (event) => {
+                console.log(event)
+                if (event.target == event.cy) return
+                console.log(event.target.classes())
+                if (event.target.classes().includes("course")) {} else {
+                    this.newTab(event.target[0].data('id'))
+                }
+            })
+            document.body.addEventListener("mouseup", (event) => {
+                console.log("click")
+                self.entityDialogue = false
+            })
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

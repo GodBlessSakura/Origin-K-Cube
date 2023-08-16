@@ -1,0 +1,224 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-expansion-panels>
+                <v-expansion-panel>
+                    <v-expansion-panel-header>
+                        Create new course/job relationship
+                    </v-expansion-panel-header>
+                    <v-expansion-panel-content>
+                        <v-form ref="tripleForm">
+                            <v-container>
+                                <v-row>
+                                    <v-col>
+                                        <v-autocomplete v-model="h_name" :items="concepts" :rules="nameRules"
+                                            label="Subject" persistent-hint>
+                                        </v-autocomplete>
+                                    </v-col>
+                                    <v-col>
+                                        <v-text-field v-model="r_name" :rules="nameRules" dense label="Description">
+                                        </v-text-field>
+                                    </v-col>
+                                    <v-col>
+                                        <v-autocomplete v-model="t_name" :items="concepts" :rules="nameRules"
+                                            label="Object" persistent-hint></v-autocomplete>
+                                    </v-col>
+                                </v-row>
+                            </v-container>
+                        </v-form>
+                        <v-btn small @click="createTriple">
+                            submit
+                        </v-btn>
+                    </v-expansion-panel-content>
+                </v-expansion-panel>
+            </v-expansion-panels>
+        </v-row>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="relationships"
+                :items-per-page="500" multi-sort :search="search">
+                <template v-slot:item.actions="{ item }">
+                    <v-icon @click="tripledelete(item.h_name,item.r_name,item.t_name)">
+                        delete
+                    </v-icon>
+                </template>
+            </v-data-table>
+
+        </v-row>
+    </v-container>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+            headers: [{
+                    text: 'Subject',
+                    value: 'h_name',
+                },
+                {
+                    text: 'description',
+                    value: 'r_name',
+                },
+                {
+                    text: 'Object',
+                    value: 't_name',
+                },
+                {
+                    text: 'Actions',
+                    value: 'actions',
+                    groupable: false,
+                },
+            ],
+            relationships: [],
+            concepts: [],
+            search: '',
+            h_name: '',
+            t_name: '',
+            r_name: '',
+            nameRules: [v => !!v || 'Name is required',
+                v => (v && v.length > 3 && v.length) < 101 ||
+                'Name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["name"]}}/.test(v)) ||
+                'Name can only contains alphanumeric characters and space.'
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let conceptsPromise = fetch("{{ url_for('RESTful.metagraph.query', concepts=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        if (body.concepts) {
+                            this.concepts = []
+                            body.concepts.forEach(c => this.concepts.push(c))
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+                let relationshipPromise = fetch("{{ url_for('RESTful.metagraph.query', triples=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        if (body.triples) {
+                            this.relationships = []
+                            body.triples.forEach(t => this.relationships.push(t))
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+                Promise.all([conceptsPromise, relationshipPromise]).then(bodies => {
+                    this.$root.progress.show = false
+                })
+            },
+            createTriple() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                if (this.$refs.tripleForm.validate()) {
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.metagraph.put') }}", {
+                            method: 'PUT',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                h_name: this.h_name,
+                                r_name: this.r_name,
+                                t_name: this.t_name,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            if (body.triple) {
+                                this.loadData()
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error when creating triple.')
+                            }
+                        })
+                }
+            },
+            tripledelete(h_name, r_name, t_name) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.metagraph.delete') }}", {
+                        method: 'DELETE',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            h_name: h_name,
+                            r_name: r_name,
+                            t_name: t_name,
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.triple) {
+                            this.loadData()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error when deleted triple.')
+                        }
+                    })
+
+            },
+        },
+        template: '#collaborate-relationship',
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

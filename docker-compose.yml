@@ -1,0 +1,22 @@
+services:
+  standalone:
+    build:
+      context: ./
+      dockerfile: ./docker/standalone/Dockerfile
+    container_name: KCUBE
+    ports:
+      - "9000:9000"
+    environment:
+      FLASK_APP: app:create_app('standalone')
+      FLASK_SETTING: ../docker/standalone/config
+    depends_on:
+      - standaloneNeo4j
+    command: conda run --no-capture-output -n kcubeExecute flask run --host=0.0.0.0 --port=9000
+  standaloneNeo4j:
+    image: neo4j:4.4.5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/1234
+    container_name: neo4j

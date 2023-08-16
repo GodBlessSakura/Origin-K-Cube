@@ -1,0 +1,455 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-btn @click="repositoryCreateDialog=true" color="success">
+                <v-icon left>
+                    add
+                </v-icon>
+                create repository
+            </v-btn>
+        </v-row>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="repositories"
+                :items-per-page="500" multi-sort :search="search">
+                <template v-slot:item.versions="{ item }">
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on" :href="'{{ url_for('instructor.repositoryVersions', courseCode=courseCode) }}/' +
+                            item.id">
+                                <v-icon>
+                                    open_in_new
+                                </v-icon>
+                                ${item.versions}
+                            </v-btn>
+                        </template>
+                        view all versions
+                    </v-tooltip>
+                </template>
+                <template v-slot:item.actions="{ item }">
+                    <v-row>
+                        <v-col cols="auto">
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn icon v-bind="attrs" v-on="on"
+                                        :href="'{{ url_for('collegue.compare')}}' + item.deltaGraphIds[item.deltaGraphIds.length-1] + '/' + item.deltaGraphIds[item.deltaGraphIds.length-2]">
+                                        <v-icon>
+                                            preview
+                                        </v-icon>
+                                    </v-btn>
+                                </template>
+                                view latest versions
+                            </v-tooltip>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn icon v-bind="attrs" v-on="on"
+                                        :href="'{{ url_for('instructor.graphImport')}}' + item.deltaGraphIds[item.deltaGraphIds.length-1]">
+                                        <v-icon>
+                                            data_object
+                                        </v-icon>
+                                    </v-btn>
+                                </template>
+                                json import
+                            </v-tooltip>
+                        </v-col>
+                        <v-col>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <span>
+                                        <v-btn icon v-bind="attrs" v-on="on" v-if="item.workspaces?.length==1"
+                                            :href="'{{ url_for('instructor.workspace')}}' + item.workspaces[0].deltaGraphId">
+                                            <v-icon>
+                                                work
+                                            </v-icon>
+                                        </v-btn>
+                                        <v-autocomplete dense append-outer-icon="work" v-bind="attrs" v-on="on"
+                                            item-text="tag" item-value="deltaGraphId" v-if="item.workspaces?.length>1"
+                                            :items="item.workspaces"
+                                            @change="this.window.open('{{ url_for('instructor.workspace')}}' + $event, '_blank')">
+                                            <template v-slot:item="data">
+                                                <v-list-item-content>
+                                                    ${data.item.tag!=''?data.item.tag:'(unnamed)'}
+                                                </v-list-item-content>
+                                            </template>
+                                        </v-autocomplete>
+                                        <v-btn icon v-bind="attrs" v-on="on" v-if="item.workspaces.length == 0"
+                                            @click="createWorkspaceDialogue(item.deltaGraphIds[item.deltaGraphIds.length-1])">
+                                            <v-icon>
+                                                work_outline
+                                            </v-icon>
+                                        </v-btn>
+                                    </span>
+                                </template>
+                                ${item.workspaces?'workspace' + (item.workspaces.length==1?'':'s') +' for latest'+
+                                ' version':'create workspace for latest version'}
+                            </v-tooltip>
+                        </v-col>
+                    </v-row>
+                </template>
+                <template v-slot:item.exposedOffset="{ item }">
+                    <span bottom v-if="item.owned">
+                        <v-autocomplete @change="setExposure(item.deltaGraphIds[$event])"
+                            :value="item.exposedOffset?item.exposedOffset:null" dense
+                            :items="Array.from({length: item.versions}, (_, i) => i + 1)">
+
+                        </v-autocomplete>
+                    </span>
+                    <v-tooltip bottom v-else>
+                        <template v-slot:activator="{ on, attrs }">
+                            <span v-bind="attrs" v-on="on">--</span>
+                        </template>
+                        you are not the owner of this repository
+                    </v-tooltip>
+                </template>
+                <template v-slot:item.creationDate="{ item }">
+                    ${item.creationDate | formatDate}
+                </template>
+                <template v-slot:item.lastModifiedDate="{ item }">
+                    ${item.lastModifiedDate | formatDate}
+                </template>
+
+                <template v-slot:item.owned="{ item }">
+                    <v-simple-checkbox v-model="item.owned" disabled></v-simple-checkbox>
+                </template>
+            </v-data-table>
+        </v-row>
+    </v-container>
+    <v-dialog v-model="workspaceCreateDialog">
+        <v-card>
+            <v-card-title class="text-h5 grey lighten-2">
+                Give a name tag to your new workspace:
+            </v-card-title>
+            <v-form ref="createWorkspaceControl">
+                <v-text-field label="tag" :rules="tagRules" v-model="tag" required></v-text-field>
+            </v-form>
+            <v-divider></v-divider>
+
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" text @click="createWorkspace()">
+                    create
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-model="repositoryCreateDialog">
+        <v-card>
+            <v-card-title class="text-h5 grey lighten-2">
+                New repository:
+            </v-card-title>
+            <v-form ref="createRepositoryControl">
+                <v-autocomplete return-object :items="trunkOrBranch" item-text="tag" item-value="deltaGraphId"
+                    v-model="selectedNode" label="base on version">
+
+                </v-autocomplete>
+                <v-text-field label="tag of repository" :rules="repoTagRules" v-model="repoTag" required></v-text-field>
+                <v-text-field label="tag of workspace" :rules="wTagRules" v-model="w_tag" required></v-text-field>
+            </v-form>
+            <v-divider></v-divider>
+
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" text @click="createRepository()">
+                    create
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            search: new URLSearchParams(window.location
+                .search).get('concept'),
+            repositories: [],
+            headers: [{
+                text: 'tag',
+                value: 'tag',
+                groupable: false,
+            },
+            {
+                text: 'creation date',
+                value: 'creationDate',
+                groupable: false,
+            },
+            {
+                text: 'lastest snapshot creation date',
+                value: 'lastModifiedDate',
+                groupable: false,
+            },
+            {
+                text: 'owned',
+                value: 'owned',
+            },
+            {
+                text: 'published versions',
+                value: 'exposedOffset',
+                width: '5%',
+                groupable: false,
+            },
+            {
+                text: '# of versions',
+                value: 'versions',
+                groupable: false,
+            },
+            {
+                text: '# of pull requests',
+                value: 'pullRequests',
+                groupable: false,
+            },
+            {
+                text: '',
+                value: 'actions',
+                groupable: false,
+            },
+            ],
+            workspaceCreateDialog: false,
+            repositoryCreateDialog: false,
+            selectedNode: undefined,
+            trunkOrBranch: undefined,
+            tag: '',
+            repoTag: '',
+            tagRules: [v => !!v || 'Tag name is required',
+            v => (v && v.length > 3 && v.length < 101) ||
+                'Tag name should be anything between 4 and 100 charactors',
+            v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            repoTagRules: [
+                v => !!v || 'Repository tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                    'Repository tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                    'Repository tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            w_tag: '',
+            wTagRules: [
+                v => !!v || 'Tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                    'Tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["w_tag"]}}/.test(v)) ||
+                    'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get', courseCode = courseCode, isInstructor = True, isDLTC = False) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.repositories = []
+                            this.trunkOrBranch = [];
+                            if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                                this.trunkOrBranch = [];
+                                [body.trunk_nodes, body.branch_nodes].forEach(nodes => {
+                                    nodes.forEach(node => {
+                                        this.trunkOrBranch.push({
+                                            tag: node.property.tag,
+                                            deltaGraphId: node.property.deltaGraphId
+                                        })
+                                        if (body.edges.filter(e => e.start == node.id).length ==
+                                            0) {
+
+                                            this.selectedNode = {
+                                                tag: node.property.tag,
+                                                deltaGraphId: node.property.deltaGraphId
+                                            }
+                                        }
+                                    })
+                                })
+                                body.edges.filter(e => e.type == "FORK").filter(e => body.branch_nodes.filter(
+                                    b => b.id == e.start).length > 0).forEach(edge => {
+                                        let branch = body.branch_nodes.filter(b => b.id == edge.start)[0]
+                                        let parent = body.branch_nodes.filter(b => b.id == edge.end)[0]
+                                        parent = parent ? parent : body.trunk_nodes.filter(b => b.id == edge
+                                            .end)[0]
+                                        let versions = 1
+                                        let cursor = edge.start
+                                        let exposedOffset = branch.isExposed ? versions : null
+                                        let pendingToBePulled = 0
+                                        let deltaGraphIds = [parent.property.deltaGraphId, branch.property
+                                            .deltaGraphId
+                                        ]
+                                        let candidate = body.edges.filter(e => e.type == "PATCH" && e.end ==
+                                            cursor)
+                                        let child = body.branch_nodes.filter(b => b.id == cursor)[0]
+                                        while (candidate.length > 0) {
+                                            versions++
+                                            cursor = candidate[0].start
+                                            child = body.branch_nodes.filter(b => b.id == cursor)[0]
+                                            deltaGraphIds.push(child.property.deltaGraphId)
+                                            exposedOffset = child.isExposed ? versions : exposedOffset
+                                            if (child.property.canPull) pendingToBePulled++
+                                            candidate = body.edges.filter(e => e.type == "PATCH" && e.end &&
+                                                e.end == cursor)
+                                        }
+                                        let work_on_candidate = body.edges.filter(e => e.type ==
+                                            "WORK_ON" && e.end == cursor)
+                                        let workspaces = work_on_candidate.map(we => {
+                                            return body.workspace_nodes
+                                                .filter(w => w.id == we.start)[0].property
+                                        }).sort(function (a, b) {
+                                            return new Date(b.lastModified) - new Date(a
+                                                .lastModified);
+                                        })
+                                        this.repositories.push({
+                                            tag: branch.property.tag,
+                                            versions: versions,
+                                            id: branch.id,
+                                            workspaces: workspaces,
+                                            deltaGraphIds: deltaGraphIds,
+                                            owned: branch.isOwner,
+                                            exposedOffset: exposedOffset,
+                                            pullRequests: pendingToBePulled,
+                                            creationDate: branch.property.creationDate,
+                                            lastModifiedDate: child.property.creationDate
+                                        })
+                                    })
+
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error on getting versions information.')
+                            }
+                        })
+                Promise.all([treePromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+
+            createWorkspaceDialogue(deltaGraphId) {
+                this.workspaceCreateDialog = true
+                this.deltaGraphId = deltaGraphId
+            },
+            createWorkspace() {
+                if (this.$refs.createWorkspaceControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.workspace.post') }}" + this.deltaGraphId, {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            tag: this.tag,
+                        })
+                    })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.workspaceCreateDialog = false
+                                    this.$refs.createWorkspaceControl.reset()
+                                    this.loadData()
+                                })
+                        })
+                }
+            },
+            createRepository() {
+                if (this.$refs.createRepositoryControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.workspace.post') }}" + this.selectedNode.deltaGraphId, {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            tag: this.repoTag,
+                            repository: true,
+                            w_tag: this.w_tag
+                        })
+                    })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.repositoryCreateDialog = false
+                                    this.$refs.createRepositoryControl.reset()
+                                    this.loadData()
+                                })
+                        })
+                }
+            },
+            setExposure(deltaGraphId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.branch.patch') }}" + deltaGraphId, {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        isExposed: true,
+                    })
+                })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+
+            }
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

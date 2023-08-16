@@ -1,0 +1,842 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card style="height: 100%; width: 100%;">
+    <v-container style="height: 100%; width: 100%;">
+        <v-row style="height: 20%;">
+            <v-col></v-col>
+            <v-col cols="auto">
+                <v-card elevation="5" style="background-color: rgba(255,255,255,0.75);">
+                    <v-container no-gutters>
+                        <v-row no-gutters>
+                            <v-col>
+                                <v-autocomplete hide-details hide-no-data ref="searchBar" dense style="width: 100%"
+                                    append-icon="" :menu-props="{ ...(!search && {value:false}) }"
+                                    :search-input.sync="search" label="Show info of ...(course code / course name)"
+                                    clearable :items="items"
+                                    @change="showingEdgeTag.length > 0?showAllPath($event):gotoPage($event)">
+                                </v-autocomplete>
+                            </v-col>
+                        </v-row>
+                        <v-row no-gutters>
+                            <v-col cols="auto">
+                                <v-select style="width: 10vw" v-model="showingEdgeTag" :items="[...edgeTags]"
+                                    label="Show relation" multiple>
+                                    <template v-slot:prepend-item>
+                                        <v-list-item @click="showingEdgeTag=[];">
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    Hide All
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                        <v-divider class="mt-2"></v-divider>
+                                        <v-list-item @click="showingEdgeTag=[...edgeTags];">
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    Select All
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                        <v-divider class="mt-2"></v-divider>
+                                    </template>
+                                    <template v-slot:selection="{ item, index }">
+                                        <span class="grey--text text-caption" v-if="index === 0">
+                                            ${showingEdgeTag.length == 1? showingEdgeTag[0]:
+                                            showingEdgeTag.length+' relation selected'}
+                                        </span>
+                                    </template>
+                                </v-select>
+                            </v-col>
+                            <v-col cols="auto">
+                                <v-subheader>Recent visit</v-subheader>
+                            </v-col>
+                            <v-col cols="auto">
+                                <v-chip-group style="width: 60vw">
+                                    <v-chip label v-for="(url, name) in visitedCourseGraph" :href="url">
+                                        ${name.split("_")[0] + " from " + (name.split("_").slice(1).join('_') == "None"?
+                                        'department':name.split("_").slice(1).join('_'))}
+                                    </v-chip>
+                                </v-chip-group>
+                            </v-col>
+                        </v-row>
+                    </v-container>
+                </v-card>
+            </v-col>
+            <v-col></v-col>
+        </v-row>
+        <v-row style="height: 80%;">
+            <div style="height: 100%; width: 100%; position: relative">
+                <canvas id="canvas"></canvas>
+            </div>
+        </v-row>
+    </v-container>
+    <v-bottom-sheet :retain-focus="false" hide-overlay persistent no-click-animation inset
+        :value="paths?paths.length>0:false">
+        <v-container v-if="paths" style="max-height: 40vh; overflow: auto; width: 100%; background-color: white;">
+            <v-row no-gutters>
+                <v-col cols="auto">
+                    Related course of <v-btn text color="primary" :href="paths[0].filter(ele=>ele.highlight)[0].url">
+                        ${paths[0].filter(ele=>ele.highlight)[0].tag}</v-btn>: (you may click the course code for
+                    entering course page)
+                </v-col>
+            </v-row>
+            <v-row no-gutters v-for="path in paths">
+                <v-col cols="auto" v-for="ele in path">
+                    <v-tooltip v-if="ele.id" top :disabled="ele.highlight">
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn text v-on="on" :color="ele.highlight?'primary':''" :href="ele.url"
+                                style="text-transform: none;">${ele.id}</v-btn>
+                        </template>
+                        ${ele.tag}
+                    </v-tooltip>
+                    <v-btn v-else depressed tile style="pointer-events: none; text-transform: none;"
+                        :style="{backgroundColor: 'rgb(' + ele.color.map(c => Math.floor(c * 255)).join(',') + ')', color: 'white'}">
+                        ${ele.id?'':ele.tag}
+                    </v-btn>
+                </v-col>
+            </v-row>
+        </v-container>
+    </v-bottom-sheet>
+    <v-snackbar style="z-index:0; bottom:10vh" right
+        :color="edgeColor?'rgb(' + edgeColor.map(c => Math.floor(c * 255)).join(',') + ')':''" v-model="focusingEdge"
+        timeout="-1">
+        <v-row no-gutters>
+            <v-col cols="auto">
+                <v-btn color="primary" text style="text-transform: none; background-color: white;"
+                    @click="showAllPath(edgeSource,[edgeTag]);focusingEdge=false">${edgeSource}</v-btn>
+            </v-col>
+            <v-col style="text-align: center">
+                <v-btn style="pointer-events: none" text>${edgeTag}</v-btn>
+            </v-col>
+            <v-col cols="auto">
+                <v-btn color="primary" text style="text-transform: none; background-color: white;"
+                    @click="showAllPath(edgeEnd,[edgeTag]);focusingEdge=false">${edgeEnd}</v-btn>
+            </v-col>
+        </v-row>
+    </v-snackbar>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.24.1/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-library@0.7.1/dist/graphology-library.min.js"></script>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script src="https://cdn.babylonjs.com/gui/babylon.gui.js"></script>
+<script>
+    sceneGenerateConfig = {
+        rowSpacing: 2,
+        colSpacing: 2,
+        chipThickness: 0.25,
+        numRow: 4,
+        socketLength: 0.25,
+        maxNumWire: 8,
+        graoundOffset: -0.75,
+        groundThickness: 0.5
+    }
+
+    function levelOf(courseCode) {
+        return courseCode[4]
+    }
+
+    function layout2position(attr) {
+        return new BABYLON.Vector3(attr.x, 0, attr.y)
+    }
+
+    factoriesFactory = (scene) => {
+        factories = {}
+        factories.legFactory = function (width) {
+            let widthOffset = width / 2
+            const pathArray = [
+                [new BABYLON.Vector3(widthOffset, 0, 0),
+                    new BABYLON.Vector3(widthOffset, 0, sceneGenerateConfig.chipThickness / 2),
+                    new BABYLON.Vector3(widthOffset, -sceneGenerateConfig.chipThickness / 2,
+                        sceneGenerateConfig.socketLength / 2),
+                    new BABYLON.Vector3(widthOffset, -sceneGenerateConfig.chipThickness / 2,
+                        sceneGenerateConfig.socketLength)
+                ],
+                [new BABYLON.Vector3(-widthOffset, 0, 0),
+                    new BABYLON.Vector3(-widthOffset, 0, sceneGenerateConfig.chipThickness / 2),
+                    new BABYLON.Vector3(-widthOffset, -sceneGenerateConfig.chipThickness / 2,
+                        sceneGenerateConfig.socketLength / 2),
+                    new BABYLON.Vector3(-widthOffset, -sceneGenerateConfig.chipThickness / 2,
+                        sceneGenerateConfig.socketLength)
+                ],
+            ];
+            let legMaterial = new BABYLON.StandardMaterial("ground", scene);
+            legMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            legMaterial.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            //legMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.1);
+            legMaterial.emissiveColor = new BABYLON.Color3(0.7, 0.7, 0.7);
+            let leg = BABYLON.MeshBuilder.CreateRibbon("leg", {
+                pathArray: pathArray,
+                sideOrientation: BABYLON.Mesh.DOUBLESIDE
+            }, scene)
+            leg.material = legMaterial
+            return leg
+        }
+        factories.chipFactory = function (node) {
+            let mesh = new BABYLON.TransformNode(node);
+            let chipMaterial = new BABYLON.StandardMaterial("ground", scene);
+            chipMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            chipMaterial.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            chipMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            let chip = BABYLON.MeshBuilder.CreateBox("chip", {
+                size: 1,
+                height: sceneGenerateConfig.chipThickness
+            }, scene);
+            chip.position.y = sceneGenerateConfig.graoundOffset + sceneGenerateConfig.groundThickness / 2 +
+                sceneGenerateConfig.chipThickness / 2
+            chip.parent = mesh
+            chip.material = chipMaterial
+            for (let i = 0; i < 4; i++) {
+                let side = new BABYLON.TransformNode("side");
+                side.parent = mesh
+                for (let j = 0; j < sceneGenerateConfig.maxNumWire; j++) {
+                    let slot = sceneGenerateConfig.maxNumWire * 2 + 1
+                    let slotWidth = 1 / slot
+                    let leg = factories.legFactory(slotWidth)
+                    leg.parent = side
+                    let firstSlotOffset = (Math.floor(slot / 2) - 0.5 + slot % 2 * 0.5) * slotWidth
+                    leg.position.x = -firstSlotOffset + slotWidth * (j * 2 + 1)
+                }
+                side.position.y = sceneGenerateConfig.graoundOffset + sceneGenerateConfig.groundThickness / 2 +
+                    sceneGenerateConfig.chipThickness / 2
+                side.position.x = Math.sin(Math.PI / 2 * i) * .5
+                side.position.z = Math.cos(Math.PI / 2 * i) * .5
+                side.rotation.y = Math.PI / 2 * i
+
+            }
+            var plane = BABYLON.Mesh.CreatePlane("namePlane", 1);
+            plane.parent = chip;
+            plane.position.y = sceneGenerateConfig.chipThickness * 0.5
+            plane.rotation.y = Math.PI
+            plane.rotation.x = Math.PI / 2
+            var advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(
+                plane);
+            var textblock = new BABYLON.GUI.TextBlock();
+            textblock.text = node.slice(0, 4) + '\n'
+            textblock.fontSize = 350;
+            textblock.top = -100;
+            textblock.color = "white";
+            textblock.outlineColor = "white";
+            textblock.fontFamily = "Arial";
+            advancedTexture.addControl(textblock);
+            textblock = new BABYLON.GUI.TextBlock();
+            textblock.text = '\n' + node.slice(4, node.length);
+            textblock.fontSize = 400;
+            textblock.top = -100;
+            textblock.color = "white";
+            textblock.outlineColor = "white";
+            textblock.fontStyle = "bold";
+            textblock.fontFamily = "Arial";
+            advancedTexture.addControl(textblock);
+            return mesh
+        }
+        factories.wireFactory = (edge) => {
+            let mesh = new BABYLON.TransformNode(edge);
+            let start = graph.source(edge)
+            let end = graph.target(edge)
+            let attr = graph.getEdgeAttributes(edge) // startOrder outgoingOrder incomingOrder endOrder
+            //missing busOrder
+            if (levelOf(start) > levelOf(end)) {
+                let tmp = start
+                start = end
+                end = start
+            }
+            let startTransformNode = scene.getNodeByName(start)
+            let endTransformNode = scene.getNodeByName(end)
+            let yOffset = (sceneGenerateConfig.graoundOffset + sceneGenerateConfig
+                .groundThickness / 2) - startTransformNode.position.y
+            let slot = sceneGenerateConfig.maxNumWire * 2 + 1
+            let slotWidth = 1 / slot
+            let firstSlotOffset = (Math.floor(slot / 2) - 0.5 + slot % 2 * 0.5) * slotWidth
+            let startOffset = -firstSlotOffset + slotWidth * (attr
+                .startOrder * 2 + 1)
+            let outgoingOffset = -sceneGenerateConfig.socketLength * 2 - slotWidth - slotWidth * (attr
+                .outgoingOrder * 2 + 1)
+            let incomingOffset = +sceneGenerateConfig.socketLength * 2 + slotWidth + slotWidth * (attr
+                .incomingOrder * 2 + 1)
+            let endOrder = firstSlotOffset - slotWidth * (attr.endOrder * 2 + 1)
+            let points = [
+                startTransformNode.position.add(
+                    new BABYLON.Vector3(
+                        Math.sin(Math.PI / 2 * 3) * .5 - sceneGenerateConfig.socketLength,
+                        yOffset,
+                        Math.cos(Math.PI / 2 * 3) * .5 + startOffset)
+                ),
+                startTransformNode.position.add(
+                    new BABYLON.Vector3(
+                        Math.sin(Math.PI / 2 * 3) * .5 + outgoingOffset,
+                        yOffset,
+                        Math.cos(Math.PI / 2 * 3) * .5 + startOffset)
+                ),
+                endTransformNode.position.add(
+                    new BABYLON.Vector3(
+                        Math.sin(Math.PI / 2) * .5 + incomingOffset,
+                        yOffset,
+                        Math.cos(Math.PI / 2) * .5 + endOrder)
+                ),
+                endTransformNode.position.add(
+                    new BABYLON.Vector3(
+                        Math.sin(Math.PI / 2) * .5 + sceneGenerateConfig.socketLength,
+                        yOffset,
+                        Math.cos(Math.PI / 2) * .5 + endOrder)
+                )
+            ]
+            let wireMaterial = new BABYLON.StandardMaterial("ground", scene);
+            wireMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            wireMaterial.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+            wireMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.1);
+            let wire = BABYLON.MeshBuilder.CreateRibbon("wire", {
+                pathArray: pathify(points, slotWidth),
+                sideOrientation: BABYLON.Mesh.DOUBLESIDE
+            }, scene)
+            wire.parent = mesh
+            wire.material = wireMaterial
+            return mesh
+
+        }
+        return factories
+    }
+
+    function pathify(points, width) {
+        let pathArray = []
+        points.map((vector, index) => {
+            if (index == points.length - 1 || index == 0) {
+                let offset
+                if (index == points.length - 1) {
+                    let path = vector.subtract(points[index - 1])
+                    offset = path.cross(BABYLON.Vector3.Up()).normalize().scale(width / 2)
+                } else if (index == 0) {
+                    let path = points[index + 1].subtract(vector)
+                    offset = path.cross(BABYLON.Vector3.Up()).normalize().scale(width / 2)
+                }
+                pathArray.push([vector.add(offset), vector.subtract(offset)])
+            } else {
+                let path1 = vector.subtract(points[index - 1])
+                let path2 = vector.subtract(points[index + 1])
+                let orientation = points[index + 1].subtract(points[index - 1]).normalize()
+                orientation = BABYLON.Vector3.Dot(orientation, (new BABYLON.Vector3(path1.z, path1.y, -path1.x))
+                    .normalize())
+                let angle = Math.acos(BABYLON.Vector3.Dot(path1.normalize(), path2.normalize())) / 2
+                console.log(index, orientation > 0)
+                let offset = path1.add(path2).normalize().scale(width / 2)
+                pathArray.push([
+                    orientation > 0 ? vector.add(offset.scale(1 / Math.sin(angle))) : vector.subtract(
+                        offset),
+                    orientation > 0 ? vector.subtract(offset) : vector.add(offset.scale(1 / Math.tan(
+                        angle)))
+                ])
+            }
+        })
+        return pathArray
+    }
+    const graph = new graphology.MultiGraph();
+    graph.setAttribute("animateDuration", 500)
+    let engine
+
+    Vue.component('app-content', {
+        data: () => ({
+            paths: undefined,
+            focusingNode: false,
+            focusingEdge: false,
+            edgeSource: "",
+            edgeTag: "",
+            edgeEnd: "",
+            edgeColor: "",
+            search: "",
+            edgeTags: new Set(),
+            showingEdgeTag: [],
+            items: [],
+            visitedCourseGraph: JSON.parse(localStorage.getItem('visitedCourseGraph'))
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let coursePromise = fetch(
+                        "{{ url_for('RESTful.course.query', list=True) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.items = []
+                        if (body.courses) {
+                            body.courses.forEach(c => {
+                                this.items.push({
+                                    text: c.concept.name,
+                                    value: c.concept.name
+                                })
+                                this.items.push({
+                                    text: c.course.courseName,
+                                    value: c.course.courseName
+                                })
+                                graph.addNode(c.concept.name, {
+                                    id: c.concept.name,
+                                    tag: c.course.courseName,
+                                    imageURL: c.course.imageURL,
+                                    url: "{{ url_for('course')}}" + encodeURIComponent(c
+                                        .concept.name)
+
+                                });
+                            })
+                            return body
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                let relationshipPromise = fetch("{{ url_for('RESTful.metagraph.query', triples=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        if (body.triples) {
+                            return body
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+                Promise.all([coursePromise, relationshipPromise]).then(bodies => {
+                    this.edgeTags = new Set(bodies[1].triples.map(t => t.r_name))
+                    let relationship = [...new Set(bodies[1].triples.map(t => t.r_name))]
+                    let colorMap = [
+                        [0.1216, 0.4667, 0.5059],
+                        [1.0, 0.498, 0.0549],
+                        [0.1725, 0.6275, 0.1725],
+                        [0.8392, 0.1529, 0.1569],
+                        [0.5804, 0.4039, 0.7412],
+                        [0.549, 0.3373, 0.2941],
+                        [0.8902, 0.4667, 0.7608],
+                        [0.498, 0.498, 0.498],
+                        [0.7373, 0.7412, 0.1333],
+                        [0.0902, 0.7451, 0.8118]
+                    ]
+                    bodies[1].triples.forEach(triple => {
+                        let bothCourseExists = true
+                        for (let name of [triple.h_name, triple.t_name]) {
+                            if (!graph.hasNode(name)) {
+                                bothCourseExists = false
+                                break
+                            }
+                        }
+                        if (!bothCourseExists) return
+                        let color = colorMap[relationship.indexOf(triple.r_name) % colorMap
+                            .length]
+                        graph.addEdge(triple.h_name, triple.t_name, {
+                            tag: triple.r_name,
+                            color: color,
+                        })
+                    })
+                    this.runLayout()
+                    graph.setAttribute("animate", false)
+                    let scene = new BABYLON.Scene(engine);
+                    let factories = factoriesFactory(scene)
+                    let hoveringMesh = null
+                    scene.onPointerObservable.add((pointerInfo) => {
+                        switch (pointerInfo.type) {
+                            // case BABYLON.PointerEventTypes.POINTERMOVE:
+                            //     console.log(pointerInfo)
+                            //     break
+                            case BABYLON.PointerEventTypes.POINTERDOWN:
+                                if (!pointerInfo.pickInfo.pickedMesh) {
+                                    this.paths = undefined
+                                    return
+                                }
+                                let pickedMesh = pointerInfo.pickInfo.pickedMesh
+                                while (pickedMesh.parent) {
+                                    pickedMesh = pickedMesh.parent
+                                }
+                                let id = pickedMesh.name
+                                console.log(id)
+                                if (graph.hasNode(id)) {
+                                    if (pointerInfo.event.button == 0) {
+                                        this.showingEdgeTag.length > 0 ? this.showAllPath(id) :
+                                            this.gotoPage(id)
+                                        this.focusingEdge = false
+                                    } else if (pointerInfo.event.button == 1) {
+                                        let url = graph.getNodeAttribute(id, "url")
+                                        if (url) this.newTab(url)
+                                    }
+                                } else if (graph.hasEdge(id)) {
+                                    let source = graph.source(id)
+                                    let target = graph.target(id)
+                                    let attr = graph.getEdgeAttributes(id)
+                                    this.edgeSource = source
+                                    this.edgeEnd = target
+                                    this.edgeTag = attr.tag
+                                    this.edgeColor = attr.color
+                                    this.focusingEdge = true
+                                    this.paths = undefined
+
+                                } else {
+                                    this.paths = undefined
+                                }
+                                break;
+                        }
+                    })
+                    let light = new BABYLON.HemisphericLight(
+                        "light1",
+                        new BABYLON.Vector3(1, 1, 0),
+                        scene
+                    );
+                    graph.nodes().forEach(node => {
+                        let chip = factories.chipFactory(node)
+                        chip.position = layout2position(graph.getNodeAttributes(node))
+                    })
+                    graph.edges().forEach(edge => {
+                        let path = factories.wireFactory(edge)
+                    })
+                    let attrs = graph.nodes().map(id => graph.getNodeAttributes(id))
+                    let xmin = Math.max(...attrs.map(a => a.x))
+                    let xmax = Math.min(...attrs.map(a => a.x))
+                    let ymin = Math.min(...attrs.map(a => a.y))
+                    let ymax = Math.max(...attrs.map(a => a.y))
+                    let groundMaterial = new BABYLON.StandardMaterial("ground", scene);
+                    groundMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+                    groundMaterial.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+                    groundMaterial.emissiveColor = new BABYLON.Color3(0.025, 0.25, 0.025);
+                    let ground = BABYLON.MeshBuilder.CreateBox('base', {
+                        height: sceneGenerateConfig.groundThickness,
+                        width: Math.abs(xmax - xmin) + 2,
+                        depth: Math.abs(ymax - ymin) + 2
+                    }, scene);
+                    ground.material = groundMaterial
+                    ground.position.x = (xmin + xmax) / 2
+                    ground.position.z = (ymin + ymax) / 2
+                    ground.position.y = sceneGenerateConfig.graoundOffset - 0.001
+                    let camera = new BABYLON.ArcRotateCamera(
+                        "camera1",
+                        3 * Math.PI / 4,
+                        Math.PI / 4,
+                        500,
+                        ground.position,
+                        scene
+                    )
+                    camera.attachControl(true);
+                    sensibility_ratio = 2.5
+                    camera.angularSensibilityX *= sensibility_ratio
+                    camera.angularSensibilityY *= sensibility_ratio
+                    camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA
+                    const rect = engine.getRenderingCanvasClientRect();
+                    const aspect = rect.height / rect.width;
+                    let width = Math.abs(xmax - xmin)
+                    let height = Math.abs(ymax - ymin)
+                    const viewScaling = 3.5 * height
+                    camera.orthoTop = (viewScaling + viewScaling * 0.1) * aspect;
+                    camera.orthoBottom = -(viewScaling - viewScaling * 0.1) * aspect;
+                    camera.orthoLeft = -viewScaling;
+                    camera.orthoRight = viewScaling;
+                    engine.runRenderLoop(function () {
+                        scene.render();
+                    })
+                    scene.registerBeforeRender(() => {
+                        let now = new Date().getTime()
+                        if (graph.getAttribute("animate")) {
+                            let start = graph.getAttribute("animateStart")
+                            let duration = graph.getAttribute("animateDuration")
+                            if (start != undefined) {
+                                if (now <= (start + duration)) {
+                                    // update
+                                } else {
+                                    // animation end
+                                }
+                                // animation update & end
+                            } else {
+                                graph.setAttribute("animateStart", now)
+                                // initialize parameter
+                            }
+                        }
+                    });
+                    this.$root.progress.show = false
+                })
+            },
+            runLayout(duration = 500, layoutDone = () => {}) {
+                sorter = (a, b) => {
+                    if (levelOf(a) < levelOf(b)) {
+                        return -1;
+                    }
+                    if (levelOf(a) > levelOf(b)) {
+                        return 1;
+                    }
+                    if (a < b) {
+                        return -1;
+                    }
+                    if (a > b) {
+                        return 1;
+                    }
+                    return 0;
+                }
+                var x = 0,
+                    y = 0,
+                    level;
+                graph.nodes().sort(sorter).forEach(node => {
+                    if (level != levelOf(node) || y >= sceneGenerateConfig.numRow * sceneGenerateConfig
+                        .rowSpacing) {
+                        x -= sceneGenerateConfig.colSpacing
+                        y = 0
+                        level = levelOf(node)
+                    }
+                    graph.setNodeAttribute(node, 'y', y)
+                    graph.setNodeAttribute(node, 'x', x)
+                    y += sceneGenerateConfig.rowSpacing
+                })
+                let colSet = [...new Set(graph.nodes().map(node => graph.getNodeAttribute(node, 'x')))]
+                let colOutgoing = {}
+                let colIncoming = {}
+                colSet.forEach(col => {
+                    let colNode = graph.filterNodes(node => graph.getNodeAttribute(node, 'x') ==
+                        col)
+                    colOutgoing[col] = 0
+                    colIncoming[col] = 0
+                    let outGoingOrder = 0
+                    let incomingOrder = 0
+                    colNode.forEach(node => {
+                        let outgoing = graph.filterNeighbors(node, neighbor => levelOf(
+                                neighbor) > levelOf(
+                                node) ||
+                            (levelOf(neighbor) == levelOf(node) &&
+                                graph.getNodeAttribute(neighbor, 'x') > graph
+                                .getNodeAttribute(node,
+                                    'x')))
+                        let incoming = graph.filterNeighbors(node, neighbor => levelOf(
+                                neighbor) < levelOf(
+                                node) ||
+                            (levelOf(neighbor) == levelOf(node) &&
+                                graph.getNodeAttribute(neighbor, 'x') < graph
+                                .getNodeAttribute(node,
+                                    'x')))
+                        let order = 0
+                        outgoing.forEach(neighbor => {
+                            graph.filterEdges(edge =>
+                                (graph.source(edge) == node && graph.target(
+                                    edge) == neighbor) ||
+                                (graph.target(edge) == node && graph.source(
+                                    edge) == neighbor)
+                            ).forEach(edge => {
+                                graph.setEdgeAttribute(edge, 'startOrder',
+                                    order)
+                                graph.setEdgeAttribute(edge, 'outgoingOrder',
+                                    outGoingOrder)
+                                order++
+                                incomingOrder++
+                            })
+                        })
+                        order = 0
+                        incoming.forEach(neighbor => {
+                            graph.filterEdges(edge =>
+                                (graph.source(edge) == node && graph.target(
+                                    edge) == neighbor) ||
+                                (graph.target(edge) == node && graph.source(
+                                    edge) == neighbor)
+                            ).forEach(edge => {
+                                graph.setEdgeAttribute(edge, 'endOrder',
+                                    order)
+                                graph.setEdgeAttribute(edge, 'incomingOrder',
+                                    outGoingOrder)
+                                order++
+                                incomingOrder++
+                            })
+                        })
+                        colOutgoing[col] += outgoing.length
+                        colIncoming[col] += incoming.length
+                    })
+                })
+                let offset = 0
+                colSet.sort((a, b) => b - a).forEach(col => {
+                    let colPaddingLeft = Math.ceil(colIncoming[col] / sceneGenerateConfig.maxNumWire)
+                    let colPaddingRight = Math.ceil(colOutgoing[col] / sceneGenerateConfig.maxNumWire)
+                    graph.filterNodes(node => graph.getNodeAttribute(node, 'x') <=
+                        col + offset).forEach(node => {
+                        graph.setNodeAttribute(node, 'x', graph.getNodeAttribute(node, 'x') -
+                            sceneGenerateConfig.colSpacing * colPaddingLeft)
+                    })
+                    offset -= colPaddingLeft * sceneGenerateConfig.colSpacing
+                    graph.filterNodes(node => graph.getNodeAttribute(node, 'x') <
+                        col + offset).forEach(node => {
+                        graph.setNodeAttribute(node, 'x', graph.getNodeAttribute(node, 'x') -
+                            sceneGenerateConfig.colSpacing * colPaddingRight)
+                    })
+                    offset -= colPaddingRight * sceneGenerateConfig.colSpacing
+                })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            },
+            gotoPage(tagOrId) {
+                if (tagOrId) {
+                    if (graph.hasNode(tagOrId)) {
+                        location.href = graph.getNodeAttribute(tagOrId, "url")
+                    } else {
+                        let ids = graph.filterNodthis.showingEdgeTage((id, attr) => attr.tag == tagOrId)
+                        if (ids.length > 0)
+                            location.href = graph.getNodeAttribute(ids[0], "url")
+                    }
+                }
+            },
+            showAllPath(tagOrId, edgeTag = this.showingEdgeTag) {
+                if (tagOrId) {
+                    let id = tagOrId
+                    if (!graph.hasNode(tagOrId)) {
+                        let ids = graph.filterNodes((id, attr) => attr.tag == tagOrId)
+                        if (ids.length == 0) return
+                        id = ids[0]
+                    }
+                    let predecessorsPath = []
+                    graphologyLibrary.traversal.dfsFromNode(graph, id,
+                        (node, attr, depth) => {
+                            graphologyLibrary.simplePath.allSimpleEdgeGroupPaths(graph, node, id).forEach(
+                                paths => {
+                                    paths.forEach(path => path.forEach(edge => {
+                                        let tag = graph.getEdgeAttribute(edge, 'tag')
+                                        if (!edgeTag.includes(tag)) return;
+                                        let source = graph.source(edge)
+                                        let target = graph.target(edge)
+                                        let paths = predecessorsPath.filter(sPath => sPath[
+                                                0]
+                                            .id == target)
+                                        if (paths.length == 0) {
+                                            if (predecessorsPath.filter(p => p[p.length - 3]
+                                                    .id == source && p[p.length - 1].id ==
+                                                    target && p[p.length - 2].tag == tag)
+                                                .length != 0) {
+                                                return
+                                            }
+                                            predecessorsPath.push([{
+                                                    ...graph.getNodeAttributes(
+                                                        source),
+                                                },
+                                                graph.getEdgeAttributes(edge),
+                                                {
+                                                    ...graph.getNodeAttributes(
+                                                        target),
+                                                    highlight: target == id,
+                                                }
+
+                                            ])
+                                        } else {
+                                            paths[0].unshift({
+                                                    ...graph
+                                                    .getNodeAttributes(
+                                                        source),
+                                                    highlight: source == id,
+                                                },
+                                                graph.getEdgeAttributes(
+                                                    edge)
+                                            )
+                                        }
+                                    }))
+                                })
+                        }, {
+                            mode: 'inbound'
+                        })
+
+                    let successorsPath = []
+                    graphologyLibrary.traversal.dfsFromNode(graph, id,
+                        (node, attr, depth) => {
+                            graphologyLibrary.simplePath.allSimpleEdgeGroupPaths(graph, id, node).forEach(
+                                paths => {
+                                    paths.forEach(path => path.forEach(edge => {
+                                        let tag = graph.getEdgeAttribute(edge, 'tag')
+                                        if (!edgeTag.includes(tag)) return;
+                                        let source = graph.source(edge)
+                                        let target = graph.target(edge)
+                                        let paths = successorsPath.filter(pPath => pPath[
+                                                pPath
+                                                .length - 1]
+                                            .id == source)
+                                        if (paths.length == 0) {
+                                            if (successorsPath.filter(p => p[0]
+                                                    .id == source && p[2].id == target && p[
+                                                        1].tag == tag && source == id)
+                                                .length != 0) {
+                                                return
+                                            }
+                                            if (source == id) {
+                                                successorsPath.push([{
+                                                        ...graph.getNodeAttributes(
+                                                            source),
+                                                        highlight: true,
+                                                    },
+                                                    graph.getEdgeAttributes(edge),
+                                                    {
+                                                        ...graph.getNodeAttributes(
+                                                            target),
+                                                    }
+                                                ])
+                                            } else {
+                                                let copy = successorsPath.filter(p => p.map(
+                                                    e => e.id).includes(source))
+                                                if (copy.length > 0) {
+                                                    successorsPath.push([...copy[0].slice(0,
+                                                        copy[0].indexOf(
+                                                            e => e.id == source)
+                                                    ), {
+                                                        ...graph
+                                                        .getNodeAttributes(
+                                                            target)
+                                                    }])
+                                                }
+                                            }
+                                        } else {
+                                            paths[0].push(
+                                                graph.getEdgeAttributes(
+                                                    edge), {
+                                                    ...graph
+                                                    .getNodeAttributes(
+                                                        target)
+                                                }
+                                            )
+                                        }
+                                    }))
+                                })
+                        }, {
+                            mode: 'outbound'
+                        })
+
+                    this.paths = [...predecessorsPath, ...successorsPath]
+                    this.paths = this.paths.length > 0 ? this.paths : [
+                        [{
+                            id: graph.getNodeAttribute(id, 'id'),
+                            tag: graph.getNodeAttribute(id, 'tag'),
+                            url: graph.getNodeAttribute(id, 'url'),
+                            highlight: true,
+                        }]
+                    ]
+                }
+            },
+        },
+        mounted: function () {
+            let element = document.getElementById("canvas")
+            element.style.width = element.parentElement.offsetWidth + "px"
+            element.style.height = element.parentElement.offsetHeight + "px"
+            engine = new BABYLON.Engine(element, true);
+            self = this
+
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

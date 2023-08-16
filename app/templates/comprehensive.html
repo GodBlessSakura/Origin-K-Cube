@@ -1,0 +1,233 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% import 'component/cyOption.html' as cyOption %}
+{% block VueComponent %}
+<v-card style="height: 100%; width: 100%;">
+    <div style="height: 80vh; width: 90vw;">
+        <div id="cy" style="height: 100%; width: 100%;"></div>
+        <!-- <v-fab-transition>
+            <v-btn color="primary" absolute bottom right fab @click="">
+                <v-icon>fit_screen</v-icon>
+            </v-btn>
+        </v-fab-transition> -->
+    </div>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+{{ layout.cytoscapeCDN() }}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<script>
+    cy = cytoscape({
+        style: cyStyles.simpleStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    })
+    cytoscapeInstance = [{
+        cy: cy,
+        edgeSelector: "[value = 'true']",
+        options: "simpleStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: document.documentElement.clientHeight * 0.15,
+        fit: true,
+        idealEdgeLength: 64,
+        edgeElasticity: 128,
+        gravity: 0.15,
+        numIter: 750,
+        initialTemp: 2000,
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function edgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name, edge.t_name),
+                value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name + '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({}),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                tripleProimse = fetch("{{ url_for('RESTful.triple.query', aggregated=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                dataPromise = fetch("{{ url_for('RESTful.metagraph.getData', aggregated=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+
+                Promise.all([tripleProimse, dataPromise]).then(body => {
+                    this.$root.progress.show = false
+                    if (body[0].triples) {
+                        body[0].courses.forEach(course => {
+                            cy.add(nodeFactory(course.concept.name, ["course"]))
+                                .data(
+                                    'imageURL',
+                                    course.course.imageURL,
+                                ).data('name', course.concept.name)
+
+                        })
+                        body[0].triples.forEach(triple => {
+                            [triple.h_name, triple.t_name].forEach(
+                                name => {
+                                    if (cy.getElementById(name).length == 0) {
+                                        cy.add(nodeFactory(name))
+                                    }
+                                })
+                            cy.add(edgeFactory(triple))
+                        });
+                    } else {
+                        this.$root.errorDisplay(body,
+                            'Unexpected error on getting draft information.')
+                    }
+                    cy.elements().style('visibility', 'hidden')
+                    if (body[1].data) {
+                        this.data = body[1].data
+                        Object.keys(this.data).forEach(entity => {
+                            console.log(cy.nodes("[name='" + entity + "']"))
+                            this.data[entity] = JSON.parse(this.data[entity])
+                            if (entity.includes("'")) {
+                                cy.nodes('[name="' + entity + '"]')[0].position(this.data[
+                                    entity])
+
+                            } else {
+                                cy.nodes("[name='" + entity + "']")[0].position(this.data[
+                                    entity])
+
+                            }
+                        })
+                        cy.fit()
+                        cy.elements().style('visibility',
+                            'visible')
+                    } else {
+                        cy.elements().style('visibility', 'hidden')
+                        let cyLayout = cy.layout({
+                            ...concentricLayoutOptions,
+                            // concentric: function (node) {
+                            //     return cyDijkstra.distanceTo(node) * -1
+                            // }
+                        })
+                        cyLayout.one('layoutstop', function () {
+                            let initOption = {
+                                ...coseLayoutOptions
+                            }
+                            initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                            initOption.numIter = Math.floor(initOption.numIter / 4)
+                            initOption.animate = false
+                            cyLayout = cy.layout(initOption)
+                            cyLayout.one('layoutstop', () => {
+                                let initOption = {
+                                    ...coseLayoutOptions
+                                }
+                                initOption.animate = false
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    cy.elements().style('visibility',
+                                        'visible')
+                                })
+                                cyLayout.run()
+                            })
+                            cyLayout.run()
+                        })
+                        cyLayout.run()
+                    }
+
+                })
+            },
+            reComputePosition() {
+                let cyLayout = cy.layout({
+                    ...concentricLayoutOptions,
+                    // concentric: function (node) {
+                    //     return cyDijkstra.distanceTo(node) * -1
+                    // }
+                })
+                cyLayout.one('layoutstop', function () {
+                    let initOption = {
+                        ...coseLayoutOptions
+                    }
+                    initOption.idealEdgeLength = initOption.idealEdgeLength * 2
+                    initOption.numIter = Math.floor(initOption.numIter / 4)
+                    initOption.animate = false
+                    cyLayout = cy.layout(initOption)
+                    cyLayout.one('layoutstop', () => {
+                        let initOption = {
+                            ...coseLayoutOptions
+                        }
+                        initOption.animate = false
+                        cyLayout = cy.layout(initOption)
+                        cyLayout.one('layoutstop', () => {
+                            cy.nodes().s
+                        })
+                        cyLayout.run()
+                    })
+                    cyLayout.run()
+                })
+                cyLayout.run()
+            }
+        },
+        mounted: function () {
+            cy.mount(document.getElementById("cy"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            this.loadData()
+
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

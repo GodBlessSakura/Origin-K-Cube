@@ -1,0 +1,861 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+
+<v-container>
+    <v-row ref="shepherd-searchText">
+        <v-col>
+            <v-text-field v-model="searchText" label="search" @input="search()"></v-text-field>
+        </v-col>
+        <v-col cols="auto" align-self="center">
+            <v-btn small text @click="showAdvanceSearch=!showAdvanceSearch">Advance Search</v-btn>
+        </v-col>
+    </v-row>
+    <v-row no-gutters v-show="showAdvanceSearch">
+        <v-col align-self="center" cols="auto">
+            <span class="mr-4">filters:</span>
+        </v-col>
+        <v-col align-self="center" cols="auto" ref="shepherd-filter">
+            <v-slide-group>
+                <v-chip filter v-model="filter.public"
+                    @click="filter.public = !filter.public; filter.internal = filter.public?false:filter.internal; search()">
+                    public</v-chip>
+                <v-chip filter v-model="filter.internal"
+                    @click="filter.internal = !filter.internal; filter.public = filter.internal?false:filter.public; search()">
+                    internal</v-chip>
+                <v-divider vertical style="margin-left: 8px; margin-right: 8px;"></v-divider>
+                <v-chip filter v-model="filter.joined"
+                    @click="filter.joined = !filter.joined; filter.notJoined = filter.joined?false:filter.notJoined; search()">
+                    on-duty</v-chip>
+                <v-chip filter v-model="filter.notJoined"
+                    @click="filter.notJoined = !filter.notJoined; filter.joined = filter.notJoined?false:filter.joined; search()">
+                    off-duty</v-chip>
+                <v-divider vertical style="margin-left: 8px; margin-right: 8px;"></v-divider>
+                <v-chip filter v-model="filter.working"
+                    @click="filter.working = !filter.working; filter.notWorking = filter.working?false:filter.notWorking; search()">
+                    has workspace</v-chip>
+                <v-chip filter v-model="filter.notWorking"
+                    @click="filter.notWorking = !filter.notWorking; filter.working = filter.notWorking?false:filter.working; search()">
+                    no workspace</v-chip>
+                <v-divider vertical style="margin-left: 8px; margin-right: 8px;"></v-divider>
+                <v-chip filter v-model="filter.exposed"
+                    @click="filter.exposed = !filter.exposed; filter.notExposed = filter.exposed?false:filter.notExposed; search()">
+                    has published graph</v-chip>
+                <v-chip filter v-model="filter.notExposed"
+                    @click="filter.notExposed = !filter.notExposed; filter.exposed = filter.notExposed?false:filter.exposed; search()">
+                    no published graph</v-chip>
+            </v-slide-group>
+        </v-col>
+        <v-col align-self="center" cols="auto">
+            <v-btn @click="clearFilter(); search();" small>
+                clear <v-icon>close</v-icon>
+            </v-btn>
+        </v-col>
+    </v-row>
+    <v-row>
+        <v-col cols="auto">
+            <v-tabs v-model="tab" center-active>
+                <v-tab>All courses</v-tab>
+                <v-tab>My space</v-tab>
+                <v-tab>My publishment</v-tab>
+            </v-tabs>
+        </v-col>
+        <v-spacer></v-spacer>
+        <v-col cols="auto" v-show="tab != 0">
+            <v-btn color="success" @click="dutyDialgue=!dutyDialgue" ref="shepherd-joinNewCourse">
+                <v-icon left>rule</v-icon>Manage course duty
+            </v-btn>
+        </v-col>
+    </v-row>
+    <v-tabs-items v-model="tab">
+        <v-tab-item>
+            <v-container fluid>
+                <v-row v-for="row in [...Array(Math.ceil(courses.length/colPerRow)).keys()]">
+                    <v-col v-for="col in  [...Array(colPerRow).keys()]" cols="4" class="d-flex"
+                        style="flex-direction:column">
+                        <kcube-course-item :course="courses[row * colPerRow + col]"
+                            @click="courses[row * colPerRow + col].workspaces.length == 0?openWorkspaceDialogue(courses[row * colPerRow + col]):(openURL('{{ url_for('instructor.workspace') }}' + courses[row * colPerRow + col].workspaces[0].deltaGraphId))"
+                            @assignment="courseAssignment(courses[row * colPerRow + col])"
+                            @import="openGraphImportDialogue(courses[row * colPerRow + col])"
+                            @info="courseInfo(courses[row * colPerRow + col])"
+                            @join="join(courses[row * colPerRow + col])" @quit="quit(courses[row * colPerRow + col])"
+                            @workspace="openWorkspaceDialogue(courses[row * colPerRow + col])">
+                        </kcube-course-item>
+                    </v-col>
+                </v-row>
+                <v-row v-if="courses.length == 0">
+                    <v-col>
+                        No course ${searchText!=""? 'contains "' + searchText + '" in course name' : ""}
+                        ${filter_length>0? 'with current filter configuration':''}.
+                        <br>
+                        You may perform following actions to see related courses with relaxed constraint:
+                    </v-col>
+                </v-row>
+                <v-row v-if="courses.length == 0 && num_courses_wo_filter['courses']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_filter["courses"]} result${num_courses_wo_filter["courses"]>1?'s':''}
+                        if no filter is applied.
+                        <br>
+                        <v-btn @click="clearFilter([]); search();">clear filter</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="courses.length == 0 && num_courses_wo_search_text['courses']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_search_text["courses"]} result${num_courses_wo_search_text["courses"]>1?'s':''}
+                        if no search text is applied.
+                        <br>
+                        <v-btn @click="searchText=''; search();">clear search text</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="courses.length == 0">
+                    <v-col> <br>
+                        <v-btn @click="clearFilter([]); searchText='';search()">clear search text & filter</v-btn>
+                    </v-col>
+                </v-row>
+            </v-container>
+        </v-tab-item>
+        <v-tab-item>
+            <v-container fluid>
+                <v-row v-for="row in [...Array(Math.ceil(space.length/colPerRow)).keys()]">
+                    <v-col v-for="col in  [...Array(colPerRow).keys()]" cols="4" class="d-flex"
+                        style="flex-direction:column">
+                        <kcube-course-item showDutyBtn showBadage :course="space[row * colPerRow + col]"
+                            @click="space[row * colPerRow + col].workspaces.length == 0?openWorkspaceDialogue(space[row * colPerRow + col]):(openURL('{{ url_for('instructor.workspace') }}' + space[row * colPerRow + col].workspaces[0].deltaGraphId))"
+                            @assignment="courseAssignment(space[row * colPerRow + col])"
+                            @import="openGraphImportDialogue(space[row * colPerRow + col])"
+                            @info="courseInfo(space[row * colPerRow + col])" @join="join(space[row * colPerRow + col])"
+                            @quit="quit(space[row * colPerRow + col])"
+                            @workspace="openWorkspaceDialogue(space[row * colPerRow + col])">
+                        </kcube-course-item>
+                    </v-col>
+                </v-row>
+                <v-row v-if="space.length == 0">
+                    <v-col>
+                        No course ${searchText!=""? 'contains "' + searchText + '" in course name' : ""}
+                        ${filter_length>0? 'with current filter configuration':''}.
+                        <br>
+                        You may perform following actions to see related courses with relaxed constraint:
+                    </v-col>
+                </v-row>
+                <v-row v-if="space.length == 0 && num_courses_wo_filter['space']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_filter["space"]} result${num_courses_wo_filter["space"]>1?'s':''}
+                        if no filter is applied.
+                        <br>
+                        <v-btn @click="clearFilter([]); search();">clear filter</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="space.length == 0 && num_courses_wo_search_text['space']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_search_text["space"]} result${num_courses_wo_search_text["space"]>1?'s':''}
+                        if no search text is applied.
+                        <br>
+                        <v-btn @click="searchText=''; search();">clear search text</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="space.length == 0">
+                    <v-col> <br>
+                        <v-btn @click="clearFilter([]); searchText='';search()">clear search text & filter</v-btn>
+                    </v-col>
+                </v-row>
+            </v-container>
+        </v-tab-item>
+        <v-tab-item>
+            <v-container fluid>
+                <v-row v-for="row in [...Array(Math.ceil(publishment.length/colPerRow)).keys()]">
+                    <v-col v-for="col in  [...Array(colPerRow).keys()]" cols="4" class="d-flex"
+                        style="flex-direction:column">
+                        <kcube-course-item showDutyBtn :course="publishment[row * colPerRow + col]"
+                            @click="publishment[row * colPerRow + col].workspaces.length == 0?openWorkspaceDialogue(publishment[row * colPerRow + col]):(openURL('{{ url_for('instructor.workspace') }}' + publishment[row * colPerRow + col].workspaces[0].deltaGraphId))"
+                            @assignment="courseAssignment(publishment[row * colPerRow + col])"
+                            @import="openGraphImportDialogue(publishment[row * colPerRow + col])"
+                            @info="courseInfo(publishment[row * colPerRow + col])"
+                            @join="join(publishment[row * colPerRow + col])"
+                            @quit="quit(publishment[row * colPerRow + col])"
+                            @workspace="openWorkspaceDialogue(publishment[row * colPerRow + col])">
+                        </kcube-course-item>
+                    </v-col>
+                </v-row>
+                <v-row v-if="publishment.length==0">
+                    <v-col>
+                        No course ${searchText!=""? 'contains "' + searchText + '" in course name' : ""}
+                        ${filter_length>0? 'with current filter configuration':''}.
+                        <br>
+                        You may perform following actions to see related courses with relaxed constraint:
+                    </v-col>
+                </v-row>
+                <v-row v-if="publishment.length == 0 && num_courses_wo_filter['publishment']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_filter["publishment"]} result${num_courses_wo_filter["publishment"]>1?'s':''}
+                        if no filter is applied.
+                        <br>
+                        <v-btn @click="clearFilter([]); search();">clear filter</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="publishment.length == 0 && num_courses_wo_search_text['publishment']>0">
+                    <v-col>There will be
+                        ${num_courses_wo_search_text["publishment"]}
+                        result${num_courses_wo_search_text["publishment"]>1?'s':''}
+                        if no search text is applied.
+                        <br>
+                        <v-btn @click="searchText=''; search();">clear search text</v-btn>
+                    </v-col>
+                </v-row>
+                <v-row v-if="publishment.length == 0">
+                    <v-col> <br>
+                        <v-btn @click="clearFilter([]); searchText='';search()">clear search text & filter</v-btn>
+                    </v-col>
+                </v-row>
+            </v-container>
+        </v-tab-item>
+    </v-tabs-items>
+    <v-dialog v-model="dutyDialgue" max-width="80vw">
+        <v-card>
+            <v-card-title>
+                <v-text-field v-model="dutySearchText" label="search""></v-text-field></v-card-title>
+            <v-card-text>
+                <v-subheader>On duty</v-subheader>
+                <v-tooltip bottom v-for=" course in allCourses"
+                    v-if="course.isTeaching && (dutySearchText == '' ? true : (course.courseCode.toLowerCase().includes(dutySearchText.toLowerCase()) || course.courseName.toLowerCase().includes(dutySearchText.toLowerCase())))">
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-chip v-bind="attrs" v-on="on" @click="quit(course)" close-icon="expand_more">
+                            ${course.courseCode}
+                            <v-icon right>expand_more</v-icon>
+                        </v-chip>
+                    </template>
+                    ${course .courseName}
+                    </v-tooltip>
+                    </v-card-text>
+                    <v-card-text>
+                        <v-subheader>Off duty</v-subheader>
+                        <v-tooltip bottom v-for="course in allCourses"
+                            v-if="!course.isTeaching && (dutySearchText == '' ? true : (course.courseCode.toLowerCase().includes(dutySearchText.toLowerCase()) || course.courseName.toLowerCase().includes(dutySearchText.toLowerCase())))">
+                            <template v-slot:activator="{ on, attrs  }">
+                                <v-chip v-bind="attrs" v-on="on" @click="join(course)" close-icon="expand_less">
+                                    ${course.courseCode}
+                                    <v-icon right>expand_less</v-icon>
+                                </v-chip>
+                            </template>
+                            ${course .courseName}
+                        </v-tooltip>
+                    </v-card-text>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-model="workspaceDialogue" max-width="500px" eager>
+        <kcube-workspace-form ref="workspaceForm"></kcube-workspace-form>
+    </v-dialog>
+    <v-dialog v-model="coursePreviewDialogue" max-width="80vw" max-height="70vh" eager>
+        <iframe ref="coursePreviewIframe" :src="coursePreviewUrl" style="height: 50vh; width:100%" frameBorder="0"
+            scrolling="no"></iframe>
+    </v-dialog>
+    <v-dialog v-model="graphImportDialogue" max-width="500px" eager>
+        <kcube-graphImport-form ref="graphImportForm"></kcube-graphImport-form>
+    </v-dialog>
+    <v-dialog v-model="courseInfoDialogue" max-width="500px">
+        <v-card v-if="course">
+            <v-card-title>${course.courseName}</v-card-title>
+            <v-card-text>
+                <v-form ref="courseInfoFormControl">
+                    <v-container>
+                        <v-row>
+                            <v-text-field v-model="courseCode" :rules="courseCodeRules" label="Cource Code" required>
+                            </v-text-field>
+                        </v-row>
+                        <v-row>
+                            <v-text-field v-model="courseName" :rules="courseNameRules" label="Course Name" required>
+                            </v-text-field>
+                        </v-row>
+                        <v-row>
+                            <v-select label="Image url" v-model="imageURL" :rules="imageURLRules" :items="imagesUrl"
+                                required>
+                                <template v-slot:item="{ item }">
+                                    <v-img :src="item" height="40" contain></v-img>
+                                </template>
+                            </v-select>
+                        </v-row>
+                        <v-row>
+                            <v-btn @click="updateCourseInfo()" color="success">
+                                update
+                            </v-btn>
+                        </v-row>
+                    </v-container>
+                </v-form>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-model="instructorDialogue" max-width="500px">
+        <v-card v-if="course">
+            <v-card-title>Instructors for ${course.courseName}</v-card-title>
+            <v-card-text>
+                <v-subheader>Joined</v-subheader>
+                <v-tooltip bottom v-for="instructor in instructors" v-if="instructor.isTeaching">
+                    <template v-slot:activator="{ on, attrs  }">
+                        <v-chip v-bind="attrs" v-on="on">
+                            ${instructor.user.userId}
+                        </v-chip>
+                    </template>
+                    ${instructor.user.email}
+                </v-tooltip>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+{% include "instructor/components/workspaceForm.html" %}
+{% include "instructor/components/graphImportForm.html" %}
+{% include "instructor/components/courseItem.html" %}
+
+<style>
+    .no-padding-list>* {
+        padding: unset
+    }
+</style>
+<script>
+    Vue.component('app-content', {
+        watch: {
+            tab(tab, oldTab) {
+                let query = new URLSearchParams(window.location.search);
+                query.delete("working")
+                query.delete("published")
+                if (tab == 2) {
+                    query.set("published", true)
+                } else if (tab == 1) {
+                    query.set("working", true)
+                }
+                this.search()
+                window.history.pushState(
+                    window.history.state, "", window.location.pathname + (query.toString() != '' ? '?' +
+                        query.toString() : ''))
+            },
+        },
+        data: () => ({
+            tab: new URLSearchParams(window.location.search).get('working') != null ? 1 :
+                new URLSearchParams(window.location.search).get('published') ? 2 : 0,
+            colPerRow: 3,
+            allCourses: [],
+            courses: [],
+            space: [],
+            publishment: [],
+            searchText: new URLSearchParams(window.location.search).get('search') ? new URLSearchParams(
+                window.location.search).get('search') : "",
+            course: null,
+            showAdvanceSearch: false,
+            num_courses_wo_filter: null,
+            num_courses_wo_search_text: null,
+            coursePreviewUrl: "",
+            filter: {
+                public: false,
+                internal: false,
+                joined: false,
+                notJoined: false,
+                working: false,
+                notWorking: false,
+                exposed: false,
+                notExposed: false
+            },
+            instructorDialogue: false,
+            instructors: null,
+            dutySearchText: '',
+            num_working_courses_wo_filter: null,
+            num_all_courses_w_filter: null,
+            dutyDialgue: false,
+            workspaceDialogue: false,
+            courseInfoDialogue: false,
+            graphImportDialogue: false,
+            coursePreviewDialogue: false,
+            imagesUrl: [
+                //{% for url in imagesUrl %}
+                '{{ url | safe}}',
+                //{% endfor %}
+            ],
+            courseCode: '',
+            courseCodeRules: [v => !!v || 'Course code is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Course code should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["courseCode"]}}/.test(v)) ||
+                'Course code can only contains alphanumeric characters and space.'
+            ],
+            courseName: '',
+            courseNameRules: [v => !!v || 'Course name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Course name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["courseName"]}}/.test(v)) ||
+                'Course name can only contains alphanumeric characters and space.'
+            ],
+            imageURL: '',
+            imageURLRules: [],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                        "{{ url_for('RESTful.course.query', instructor=True) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.courses) {
+                            // if (body.courses.filter(c => c.isTeaching).length == 0) this.filter.joined =
+                            //     false
+                            body.courses.sort((a, b) => {
+                                if (a.concept.name < b.concept.name) {
+                                    return -1;
+                                }
+                                if (a.concept.name > b.concept.name) {
+                                    return 1;
+                                }
+                                return 0;
+                            }).forEach(c => {
+                                this.allCourses.push({
+                                    courseCode: c.concept.name,
+                                    imageURL: c.course.imageURL,
+                                    courseName: c.course.courseName,
+                                    isInternal: c.course.isInternal,
+                                    isTeaching: c.isTeaching,
+                                    workspaces: c.workspaces,
+                                    hasExposedGraph: c.hasExposedGraph,
+                                })
+                            })
+                            let unexposedCourse = this.allCourses.filter(course => course.isTeaching && !
+                                course.hasExposedGraph)
+                            if (unexposedCourse.length > 0) {
+                                this.$root.errorDisplay({},
+                                    unexposedCourse.length + ' course' + (unexposedCourse > 1 ? 's' :
+                                        '') + ' that you are teaching has no published graph.')
+                                this.$nextTick(() => { // need to wait the courses v-card to be rendered
+                                    unexposedCourse.every(c => {
+                                        console.log(c, Object.keys(this.$refs), Object.keys(
+                                                this.$refs)
+                                            .includes(c.courseCode))
+                                        if (Object.keys(this.$refs).includes(c
+                                                .courseCode)) {
+                                            let el = this.$refs[c.courseCode][0].$el
+                                            el.scrollIntoView({
+                                                behavior: "smooth",
+                                                block: "center"
+                                            })
+                                            let ev = new Event("mousedown")
+                                            let offset = el.getBoundingClientRect()
+                                            ev.clientX = offset.left + 1
+                                            ev.clientY = offset.top + 1
+                                            el.dispatchEvent(ev)
+                                            this.$nextTick(function () {
+                                                el.dispatchEvent(new Event(
+                                                    "mouseup"))
+                                            })
+                                            return false
+                                        }
+                                        return true
+                                    })
+                                })
+                            }
+                            this.search()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+            },
+            courseInfo(course) {
+                this.course = course
+                this.courseInfoDialogue = true
+                this.courseCode = course.courseCode
+                this.courseName = course.courseName
+                this.imageURL = course.imageURL
+            },
+            openCoursePreview(course) {
+                this.courseCode = course.courseCode
+                this.$refs.coursePreviewIframe.onload = () => {
+                    this.coursePreviewDialogue = true;
+                    this.$refs.coursePreviewIframe.onload = null
+                }
+                let newUrl = "{{ url_for('course')}}" + encodeURIComponent(this.courseCode)
+                if (this.coursePreviewUrl == newUrl) {
+                    this.$refs.coursePreviewIframe.contentWindow.location.reload()
+                } else {
+                    this.coursePreviewUrl = "{{ url_for('course')}}" + encodeURIComponent(this.courseCode)
+                }
+            },
+            openURL(url) {
+                window.location.href = url
+            },
+            openWorkspaceDialogue(course) {
+                this.courseCode = course.courseCode
+                this.$refs.workspaceForm.loadData(this.courseCode);
+                this.workspaceDialogue = true;
+            },
+            openGraphImportDialogue(course) {
+                this.courseCode = course.courseCode
+                this.$refs.graphImportForm.loadData(this.courseCode);
+                this.graphImportDialogue = true;
+            },
+            updateCourseInfo() {
+                if (this.$refs.courseInfoFormControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(this.course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                courseName: this.courseName,
+                                imageURL: this.imageURL,
+                                name: this.courseCode,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Update failed for unknown reason.',
+                                () => {
+                                    location.reload()
+                                })
+                        })
+                }
+            },
+            courseAssignment(course) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                this.course = course
+                fetch("{{ url_for('RESTful.course.query') }}/" + course.courseCode + "/instructors", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.instructors) {
+                            this.instructors = body.instructors
+                            this.instructorDialogue = true
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting instructor assignment information.')
+                        }
+
+                    })
+            },
+            join(course) {
+                this.$root.actionDisplay("You are joining " + course.courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: true
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.allCourses[this.allCourses.map(c => c.courseCode)
+                                        .indexOf(course.courseCode)].isTeaching = true
+                                    this.search()
+                                })
+
+                        })
+                })
+            },
+            quit(course) {
+                this.$root.actionDisplay("You are quiting " + course.courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: false
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.allCourses[this.allCourses.map(c => c.courseCode)
+                                        .indexOf(course.courseCode)].isTeaching = false
+                                    this.search()
+                                })
+                        })
+                })
+            },
+            clearQueryString() {
+                var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname
+                window.history.pushState({
+                    path: newurl
+                }, '', newurl)
+            },
+            clearFilter(except = ['']) {
+                Object.keys(this.filter).forEach(key => {
+                    if (except.includes(key)) return;
+                    this.filter[key] = false
+                })
+            },
+            search() {
+                var lists = ["courses", "space", "publishment"]
+
+                let unconstrained = {}
+                unconstrained["courses"] = this.allCourses.slice();
+                unconstrained["space"] = unconstrained["courses"].filter(c =>
+                    c.workspaces.length > 0
+                ).slice()
+                unconstrained["publishment"] = unconstrained["space"].filter(c =>
+                    c.hasExposedGraph && c.isTeaching
+                ).slice()
+                lists.forEach(list => {
+                    this[list] = unconstrained[list]
+                })
+
+                let apply_search_text = (c) => {
+                    return c.courseCode.toLowerCase().includes(this.searchText.toLowerCase()) ||
+                        c.courseName.toLowerCase().includes(this.searchText.toLowerCase())
+                }
+                if (this.searchText == "") {} else {
+                    lists.forEach(list => {
+                        this[list] = this[list].filter(c => apply_search_text(c))
+                    })
+                }
+                this.filter_length = Object.keys(this.filter).map(key => this.filter[key]).filter(value =>
+                    value).length
+                this.num_courses_wo_search_text = {}
+                this.num_courses_wo_filter = {}
+
+                let apply_filter = (c) => {
+                    return !(this.filter.public && c.isInternal) &&
+                        !(this.filter.internal && !c.isInternal) &&
+                        !(this.filter.joined && !c.isTeaching) &&
+                        !(this.filter.notJoined && c.isTeaching) &&
+                        !(this.filter.working && c.workspaces.length == 0) &&
+                        !(this.filter.notWorking && c.workspaces.length != 0) &&
+                        !(this.filter.exposed && !c.hasExposedGraph) &&
+                        !(this.filter.notExposed && c.hasExposedGraph)
+                }
+                if (this.filter_length > 0) {
+                    lists.forEach(list => {
+                        this[list] = this[list].filter(c => apply_filter(c))
+                        this.num_courses_wo_search_text[list] =
+                            unconstrained[list].filter(c => apply_filter(c)).length
+                        this.num_courses_wo_filter[list] =
+                            unconstrained[list].filter(c => apply_search_text(c)).length
+                    })
+                }
+            },
+        },
+        mounted: function () {
+            self = this
+            this.$root.pageIntro = () => {
+                self._tour = self.$shepherd({
+                    useModalOverlay: true,
+                    defaultStepOptions: {
+                        classes: 'shadow-md bg-purple-dark',
+                        scrollTo: {
+                            behavior: 'smooth',
+                            block: 'center'
+                        },
+                        cancelIcon: {
+                            enabled: true
+                        },
+                        canClickTarget: false,
+                        buttons: [{
+                            text: 'Next',
+                            action: () => self._tour.next()
+                        }],
+                    }
+                })
+                if (self.$refs["shepherd-newWorkspace"] && self.$refs["shepherd-newWorkspace"].length >
+                    0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-newWorkspace"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: 'Click to create an empty workspace',
+                    })
+                }
+                if (self.$refs["shepherd-recentVisit"] && self.$refs["shepherd-recentVisit"].length >
+                    0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-recentVisit"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to enter a recently visited workspace",
+                    })
+                }
+                if (self.$refs["shepherd-searchText"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-searchText"],
+                            on: 'bottom'
+                        },
+                        text: "You may search courses with it's code or it's name",
+                    })
+                }
+                if (self.$refs["shepherd-filter"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-filter"],
+                            on: 'bottom'
+                        },
+                        text: "Click to apply filter on courses",
+                    })
+                }
+                if (self.$refs["shepherd-joinNewCourse"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-joinNewCourse"].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to manage course duty",
+                    })
+                }
+                if (self.$refs["shepherd-joinNewCourse"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-joinNewCourse"].$el,
+                            on: 'bottom'
+                        },
+                        text: "Make sure the course you are teaching are labeled as 'on-duty'",
+                        beforeShowPromise: () =>
+                            new Promise((resolve, reject) => {
+                                this.miniSync = false
+                                this.$refs["shepherd-joinNewCourse"].$el.dispatchEvent(
+                                    new MouseEvent("click"))
+                                setTimeout(() => {
+                                    resolve();
+                                }, 100);
+                            }),
+                    })
+                }
+                if (self.$refs["shepherd-working"] && self.$refs["shepherd-working"].length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-working"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to toggle the label",
+                    })
+                }
+                if (self.$refs["shepherd-listCourseInstructor"] && self.$refs[
+                        "shepherd-listCourseInstructor"].length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-listCourseInstructor"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to assign/unassign instructors",
+                    })
+                }
+                if (self.$refs["shepherd-manageVersions"] && self.$refs["shepherd-manageVersions"]
+                    .length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-manageVersions"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to enter the version management panel",
+                    })
+                }
+                if (self.$refs["shepherd-approveUpdates"] && self.$refs["shepherd-approveUpdates"]
+                    .length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-approveUpdates"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to view update requests from instructors",
+                    })
+                }
+                self._tour.start();
+                self._tour.on("complete", function () {
+                    localStorage.setItem(
+                        "{{request.endpoint}}Toured", true)
+                })
+            }
+            self.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

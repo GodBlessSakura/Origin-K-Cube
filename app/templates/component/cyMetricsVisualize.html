@@ -1,0 +1,133 @@
+{% macro componentContent() %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-col cols="1">
+                color
+            </v-col>
+            <v-col>
+                <v-color-picker @input="metricsVisualize()" canvas-height="50" v-model="metricsVisualization.zeroColor"
+                    hide-mode-switch hide-inputs>
+                </v-color-picker>
+            </v-col>
+            <v-col>
+                <v-color-picker @input="metricsVisualize()" canvas-height="50" v-model="metricsVisualization.oneColor"
+                    hide-mode-switch hide-inputs>
+                </v-color-picker>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="1">
+                thickness
+            </v-col>
+            <v-col>
+                <v-slider thumb-label v-model="metricsVisualization.thickness" max="20" min="1"
+                    @change="metricsVisualize()">
+                </v-slider>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col>
+                <v-btn-toggle v-model="metricsVisualization.metric" @change="metricsVisualize()">
+                    <v-btn>Degree
+                    </v-btn>
+                    <v-btn>Closeness
+                    </v-btn>
+                    <v-btn>Betweeness
+                    </v-btn>
+                    <v-btn>PageRank
+                    </v-btn>
+                </v-btn-toggle>
+
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col>
+
+            </v-col>
+        </v-row>
+    </v-container>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-metrics-visualize-bottom-sheet">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-metrics-visualize-bottom-sheet', {
+        data: () => ({
+            metricsVisualization: {
+                thickness: 3,
+                metric: undefined,
+                zeroColor: {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                },
+                oneColor: {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                },
+            }
+        }),
+        methods: {
+            metricsVisualize() {
+                cytoscapeInstance.forEach(option => {
+                    let cy = option.cy
+                    let edgeSelector = option.edgeSelector
+                    if (this.metricsVisualization.metric == undefined) {
+                        cy.nodes().forEach(node => {
+                            node.style("border-width", null)
+                            node.style("border-color", null)
+                        })
+                    } else {
+                        let metric = ["degreeCentralityNormalized", "closenessCentralityNormalized",
+                            "betweennessCentrality", "pageRank"
+                        ][this.metricsVisualization.metric]
+                        let measure = ["degree", "closeness",
+                            "betweenness", "rank"
+                        ][this.metricsVisualization.metric]
+                        let edgeSet = cy.edges(
+                            edgeSelector ? edgeSelector :
+                            '[subject_value = "true"][workspace_value != "false"],[workspace_value = "true"]'
+                        )
+                        let nodeSet = edgeSet.sources().union(edgeSet.targets())
+                        let set = nodeSet.union(edgeSet)
+                        let result = set[metric]()[measure]
+                        let max
+                        let min
+                        if (!metric.includes("Normalized")) {
+                            max = nodeSet.map(node => result('[id = "' + node.data("id") + '"]'))
+                            min = nodeSet.map(node => result('[id = "' + node.data("id") + '"]'))
+                            max = Math.max(...max)
+                            min = Math.min(...min)
+                        }
+                        nodeSet.forEach(node => {
+                            let value = result('[id = "' + node.data("id") + '"]')
+
+                            if (!metric.includes("Normalized")) {
+                                value = (value - min) / (max - min)
+                            }
+                            let color = [];
+                            ["r", "g", "b"].forEach(c => {
+                                color.push((this.metricsVisualization.oneColor[c] - this
+                                        .metricsVisualization.zeroColor[c]) *
+                                    value + this
+                                    .metricsVisualization.zeroColor[c])
+                            })
+                            node.style("border-width", this.metricsVisualization.thickness)
+                            node.style("border-color", color)
+                        })
+                    }
+
+                })
+            },
+        },
+        template: '#kcube-metrics-visualize-bottom-sheet',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}

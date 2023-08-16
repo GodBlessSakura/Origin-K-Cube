@@ -1,0 +1,1 @@
+MATCH (n) RETURN labels(n) AS NodeType, count(n) AS NumberOfNodes;

@@ -1,0 +1,211 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-tabs v-model="tab" center-active @change="selectTab">
+        <v-tab>Users' Role</v-tab>
+        <v-tab>permissions</v-tab>
+    </v-tabs>
+    <v-tabs-items v-model="tab">
+        <v-tab-item>
+            <v-card>
+                <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details>
+                </v-text-field>
+                <v-data-table show-group-by :headers="roles" :items="users" :items-per-page="500" multi-sort
+                    :search="search">
+                    <template v-slot:item="{ item }">
+                        <tr>
+                            <td v-for="(value, name) in item">
+                                <v-simple-checkbox readonly color="info" :value="value"
+                                    v-if="typeof value  == 'boolean' && permissions.map(p=>p.name).includes(name)" @click="flipRole(item , name, value)">
+                                </v-simple-checkbox>
+                                <v-simple-checkbox readonly color="info" :value="value"
+                                    v-else-if="typeof value  == 'boolean'">
+                                </v-simple-checkbox>
+                                <span v-else>${value}</span>
+                            </td>
+                        </tr>
+                    </template>
+                </v-data-table>
+            </v-card>
+        </v-tab-item>
+        <v-tab-item>
+            <v-card>
+                <v-card-title>
+                    <v-treeview dense open-on-click :items="permissions"></v-treeview>
+                </v-card-title>
+            </v-card>
+        </v-tab-item>
+    </v-tabs-items>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    let tabs = ['role', 'permission']
+    Vue.component('app-content', {
+        data: () => ({
+            tab: tabs.indexOf(new URLSearchParams(window.location
+                .search).get('tab')),
+            users: [],
+            roles: [],
+            permissions: [],
+            search: ""
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                    "{{ url_for('RESTful.role.query', listRolePermission=True) }}", {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.permissions) {
+                            this.roles = [{
+                                text: "UserId",
+                                value: 'userId',
+                                groupable: false,
+                            }, {
+                                text: "Email",
+                                value: 'email',
+                                groupable: false,
+                            }, {
+                                text: "Verified",
+                                value: 'verified',
+                            }, ...body.permissions.sort((a, b) => {
+                                a_permission = Object.values(a).reduce((count, value) => {
+                                    return count + (value ? 1 : 0)
+                                }, 0)
+                                b_permission = Object.values(b).reduce((count, value) => {
+                                    return count + (value ? 1 : 0)
+                                }, 0)
+                                return a_permission < b_permission ? -1 : a_permission >
+                                    b_permission ? 1 : 0
+                            })
+                                .map(p => {
+                                    return {
+                                        text: p.role,
+                                        value: p.role
+                                    }
+                                })
+                            ]
+                            this.permissions = body.permissions.map(p => {
+                                return {
+                                    name: p.role,
+                                    children: Object.keys(p)
+                                        .map(k => {
+                                            return {
+                                                name: k + ' : ' + p[k]
+                                            }
+                                        })
+                                }
+                            })
+                            fetch("{{ url_for('RESTful.role.query', listUser=True ) }}", {
+                                method: 'GET',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                            })
+                                .then(response => {
+                                    try {
+                                        return response.json()
+                                    } catch {
+                                        this.$root.progress.show = false
+                                        this.$root.errorDisplay({},
+                                            'Unexpected error occured.')
+                                    }
+                                })
+                                .then(body => {
+                                    if (body.users) {
+                                        this.users = body.users.map(u => {
+                                            let user_role = {
+                                                userId: u.user.userId,
+                                                email: u.user.email,
+                                                verified: u.user.verified
+                                            }
+                                            this.permissions.forEach(element => {
+                                                user_role[element.name] = u.roles
+                                                    .includes(element.name)
+                                            });
+                                            let user_row = user_role
+                                            return user_row
+                                        })
+                                        this.$root.progress.show = false
+                                    } else {
+                                        this.$root.errorDisplay(body,
+                                            'Unexpected error on getting user information.')
+                                        this.$root.progress.show = false
+                                    }
+                                })
+                        } else {
+                            this.$root.errorDisplay(body, 'Unexpected error on getting role information.')
+                            this.$root.progress.show = false
+                        }
+                    })
+
+            },
+            flipRole(item, role, value) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                if (!item.verified && !value) {
+                    this.$root.responseSnackBar({}, 'The email of this user is not verified, assigning role to unverified user is risky.')
+                    return
+                }
+                userId = item.userId
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.role.put') }}" + encodeURIComponent(userId), {
+                    method: value ? "DELETE" : "PUT",
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        role: role
+                    })
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Unexpected error on setting role assignment.',
+                            this.loadData)
+                    })
+            },
+            selectTab(tab) {
+                let query = new URLSearchParams(window.location.search)
+                query.set("tab", tabs[tab])
+                window.history.pushState(
+                    window.history.state, "", window.location.pathname + '?' + query.toString())
+
+            }
+        },
+        template: '#content',
+        mounted() {
+            this.loadData()
+        },
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

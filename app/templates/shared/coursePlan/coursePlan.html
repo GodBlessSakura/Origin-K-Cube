@@ -1,0 +1,617 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<div>
+    <v-container id="app">
+        <v-row>
+            <v-col>
+                <v-card-title>
+                    {{ courseCode }}<br>
+                    course plan
+                </v-card-title>
+            </v-col>
+            {% if request.blueprint == "instructor" %}
+            <v-col>
+                <v-card-text>
+                    <v-btn v-show="graph && (workspace == null || graph?.deltaGraphId != workspace?.deltaGraphId)" small
+                        text
+                        :href="(graph?.labels.includes('Workspace')?'{{url_for('instructor.workspace')}}':'{{url_for('collegue.graphView')}}') + graph?.deltaGraphId">
+                        ${graph?.labels.includes('Workspace')?'Edit':'View'} the
+                        ${graph?.isExposed?'published':'last-modified'} graph
+                        <v-icon v-if="graph?.labels.includes('Workspace')">work</v-icon>
+                        <v-icon v-else>open_in_new</v-icon>
+                    </v-btn>
+                    <v-btn v-show="graph == null && tree" small text color="warning"
+                        href="{{ url_for('course', courseCode = courseCode)}}?hideGraph">
+                        create / publish a workspace<v-icon>work</v-icon>
+                    </v-btn>
+                </v-card-text>
+            </v-col>
+            <v-col v-show="graph && !graph.isExposed">
+                <v-card-text>
+                    <v-btn small text @click="exposeWorkspace()">
+                        Publish last-modified graph
+                        <v-icon>public</v-icon>
+                    </v-btn>
+                </v-card-text>
+            </v-col>
+            {% endif %}
+        </v-row>
+        {% if request.blueprint == "instructor" %}
+        <v-row v-if="graph" no-gutters>
+            <v-col>
+                <v-btn @click="constructTimetable(triples,[],true)">recompute</v-btn>
+                <v-btn v-show="preview || unsyncedCount > 0" color="success" @click="submitTable()">submit</v-btn>
+                <v-btn v-show="preview" color="error" @click="loadData()">undo</v-btn>
+            </v-col>
+            <v-col cols="auto">
+                <v-form ref="entityForm">
+                    <v-text-field :rules="nameRules" label="create entity" dense flat solo v-model="entity_name">
+                    </v-text-field>
+                </v-form>
+            </v-col>
+            <v-col cols="auto">
+                <v-btn @click="createEntity()">create</v-btn>
+            </v-col>
+            <v-col cols="auto">
+                <draggable v-model="deck" :group="{name:'schedule', put: false}" handle=".handle"
+                    style="height: 100%; background: content-box grey">
+                    <kcube-schedule-item v-for="child of deck" :node="child" deck>
+                    </kcube-schedule-item>
+                </draggable>
+            </v-col>
+        </v-row>
+        {% elif request.blueprint == "DLTC" %}
+        <v-row no-gutters>
+            <v-col>
+                <v-btn @click="constructTimetable(triples,[],true)">recompute</v-btn>
+                <v-btn v-show="preview || unsyncedCount > 0" color="success" @click="submitTable()">submit</v-btn>
+                <v-btn v-show="preview" color="error" @click="loadData()">undo</v-btn>
+            </v-col>
+            <v-col cols="auto">
+            </v-col>
+        </v-row>
+        {% endif %}
+        <v-row>
+            <v-col>
+
+            </v-col>
+            <v-col cols="auto">
+                {% if request.blueprint == "instructor" %}
+                <v-card-text v-if="graph == null && tree">
+                    You have not published a workspace or a graph version.<br>
+                    No last-modified workspace was found neither.<br>
+                    Course plan is built upond a graph.
+                </v-card-text>
+                {% endif %}
+                <kcube-schedule-item ref="root" root v-if="tree" :node="tree"
+                    @showDetails="showDetails($event[0],$event[1])" @countNotSync="countNotSync($event)">
+                </kcube-schedule-item>
+                <v-card-text v-else>
+                    No course plan is avaliable.
+                </v-card-text>
+                <v-progress-circular indeterminate v-else></v-progress-circular>
+            </v-col>
+            <v-col>
+
+            </v-col>
+        </v-row>
+    </v-container>
+    <v-menu v-model="showMenu" :position-x="x" :position-y="y" absolute offset-y>
+        <v-card>
+            <v-card-title>
+                Concept ID: ${ details?.name }
+            </v-card-title>
+            <v-card-subtitle>
+                description: ${ details?.desc }
+            </v-card-subtitle>
+            {% if request.blueprint == "instructor" %}
+            <v-card-actions>
+                <v-btn text color="primary" @click="openEntityEditor(details.name)">
+                    open entity editor
+                </v-btn>
+                <v-btn text color="primary" v-show="details?.notSync" @click="$refs.root.sync(details)">
+                    sync
+                </v-btn>
+                <v-btn text color="error" @click="decapitate(details)">
+                    delete
+                </v-btn>
+            </v-card-actions>
+            {% endif %}
+        </v-card>
+    </v-menu>
+    <v-snackbar right top style="z-index:5;" :value="showMenuTips" timeout="-1">
+        ${unsyncedCount?'There are '+ unsyncedCount + ' unsynced item'+ (unsyncedCount>1?'s':'') +
+        '. You may right-click on them for syncing':
+        'You may right-click on item for course material and details'}
+    </v-snackbar>
+    <v-tooltip top>
+        <template v-slot:activator="{ on, attrs }">
+            <v-fab-transition>
+                <v-btn v-show="!isEntityEditorVisible" v-bind="attrs" v-on="on" @click="backToEntityEditor()" fixed
+                    bottom right fab>
+                    <v-icon>edit</v-icon>
+                </v-btn>
+            </v-fab-transition>
+        </template>
+        back to opened concept editor
+    </v-tooltip>
+</div>
+{% endblock %}
+
+{% block VueComponentScript %}
+{% import 'shared/coursePlan/scheduleItem.html' as scheduleItem with context %}
+{{ scheduleItem.component()}}
+{{ scheduleItem.script()}}
+<style>
+    .v-text-field input,
+    .v-list-item {
+        font-size: small;
+    }
+
+    .v-list-item {
+        padding: 0 0 0 8px;
+    }
+
+    #sortable>div {
+        float: left;
+    }
+</style>
+{% import 'shared/coursePlan/courseTreeAlgo.js' as courseTreeAlgo with context%}
+<script>
+    //{{ courseTreeAlgo.script() }}
+</script>
+<script>
+    let tree_edge_name = "Subtopic in"
+    let workspaceDeltagraphId // lazy to remove watchers when this.editor_bc.postMessage
+    let weekInSemester = 13
+    Vue.component('app-content', {
+        data: () => ({
+            editor_bc: new BroadcastChannel("{{courseCode}}-{{request.blueprint}}-editor"),
+            isEntityEditorVisible: true,
+            tree: null,
+            x: null,
+            y: null,
+            showMenuTips: false,
+            showMenuTipsInterval: null,
+            unsyncedCount: 0,
+            details: null,
+            showMenu: false,
+            inIframe: false,
+            preview: false,
+            graph: null,
+            workspace: null,
+            activityWeekRules: [v => !!v || 'week is required',
+                v => (v && v > 0 && v < 14) ||
+                'Week should be between 1 and 13',
+            ],
+            nameRules: [v => !!v || 'Name is required',
+                v => (v && v.length > 1 && v.length) < 99 ||
+                'Name should be anything between 2 and 99 charactors',
+                v => (v && /{{regExpRules["name"]}}/.test(v)) ||
+                'Name can only contains alphanumeric characters and space.'
+            ],
+            entity_name: '',
+            deck: []
+        }),
+
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let activityPromise = fetch(
+
+                        // {% if request.blueprint == "instructor" %}
+                        "{{ url_for('RESTful.activity.query', ofUser = True, courseCode = courseCode) | safe}}",
+                        // {% else %}
+                        "{{ url_for('RESTful.activity.query', userId = userId, courseCode = courseCode) | safe}}",
+                        // {% endif %}
+                        {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.activities) {
+                            return body.activities
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses plan information.')
+                        }
+                    })
+                let graphPromise = fetch(
+                        // {% if request.blueprint == "instructor" %}
+                        "{{ url_for('RESTful.triple.getCourse', courseCode = courseCode, userId = USER.userId) }}?lastModifiedIfNone=True",
+                        // {% elif request.blueprint == "DLTC" %}
+                        "{{ url_for('RESTful.triple.getCourse', courseCode = courseCode) }}",
+                        // {% else %}
+                        "{{ url_for('RESTful.triple.getCourse', courseCode = courseCode, userId = userId) }}",
+                        // {% endif %}
+                        {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.course && body.triples) {
+                            this.graph = body.graph
+                            console.log(this.graph)
+                            workspaceDeltagraphId = this.graph ? this.graph.deltaGraphId : null
+                            return body.triples
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+                return Promise.all([graphPromise, activityPromise]).then(data => {
+                    tripleFilter = triple => triple.r_name == tree_edge_name && triple.r_value == true
+                    let triples = data[0] ? data[0].filter(tripleFilter) : []
+                    let activities = data[1]
+                    this.triples = triples
+                    this.activities = activities
+                    this.constructTimetable(triples, activities)
+                    // {% if request.blueprint == "instructor" %}
+                    this.countNotSync()
+                    //{% endif %}
+                })
+            },
+            constructTimetable(triples, activities, preview = false) {
+                this.preview = preview
+                triples = [...triples]
+                this.tree = traversal("{{courseCode}}", triples, activities)
+                sortChildren(this.tree)
+                allocate(this.tree, 0, this.tree.numItem)
+                this.tree.parent = null
+                console.log(this.tree)
+                // {% if request.blueprint == "instructor" or request.blueprint == "DLTC"  %}
+                if (!preview)
+                    this.$nextTick(() => {
+                        this.submitTable()
+                    })
+                //{% endif %}
+            },
+            showDetails(event, entity) {
+                event.preventDefault()
+                this.x = event.clientX
+                this.y = event.clientY
+                let {
+                    _vue,
+                    parent,
+                    children,
+                    schedule,
+                    ...orphan
+                } = entity
+                this.details = orphan
+                delete this.details._vue
+                this.$nextTick(() => {
+                    this.showMenu = true
+                })
+                this.showMenuTips = this.unsyncedCount ? true : false
+                this.wheelInterval ? clearInterval(this.wheelInterval) : null
+                this.wheelInterval = setInterval(() => {
+                    this.showMenuTips = true
+                }, 10000)
+
+            },
+            // {% if request.blueprint == "instructor" %}
+            submitTable() {
+                this.preview = false
+
+                function recursiveSubmit(node) {
+                    if (node.notSync) {
+                        node._vue.sync()
+                    }
+                    flattenSchedule(node.schedule).filter(node => node.notSync).forEach(child =>
+                        recursiveSubmit(child))
+                }
+                recursiveSubmit(this.tree)
+            },
+            countNotSync(option = {}) {
+                let firstNotSync
+
+                function countNotSync(previous, node) {
+                    let children = flattenSchedule(node.schedule)
+                    let count = previous + (node.notSync ? 1 : 0)
+                    if (node.notSync && firstNotSync == undefined) {
+                        firstNotSync = node
+                    }
+                    if (children.length > 0) {
+                        count += children.reduce(countNotSync, 0)
+                    }
+                    return count
+                }
+                this.unsyncedCount = flattenSchedule(this.tree.schedule).reduce(countNotSync, 0)
+                if (this.unsyncedCount > 0) {
+                    this.showMenuTips = true
+                }
+                if (firstNotSync && option.scroll) {
+                    let el = firstNotSync._vue.$el
+                    el.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center"
+                    })
+                    let ev = new Event("mousedown")
+                    let offset = el.getBoundingClientRect()
+                    ev.clientX = offset.left + 1
+                    ev.clientY = offset.top + 1
+                    el.dispatchEvent(ev)
+                    this.$nextTick(function () {
+                        el.dispatchEvent(new Event("mouseup"))
+                    })
+                }
+            },
+            decapitate(entity) {
+                fetch("{{ url_for('RESTful.triple.post') }}" + workspaceDeltagraphId, {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            h_name: entity.name,
+                            r_name: tree_edge_name,
+                            decapitate: true,
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.triples) {
+                            this.triples = this.triples.filter(triple => {
+                                return body.triples.filter(removed => triple.h_name == removed
+                                    .h_name &&
+                                    triple.r_name == removed.r_name &&
+                                    triple.t_name == removed.t_name).length == 0
+                            })
+                            this.constructTimetable(this.triples, this.activities)
+                            this.editor_bc.postMessage({
+                                message: 'coursePlan-decapitate',
+                                payload: body.triples,
+                                workspaceDeltagraphId: workspaceDeltagraphId
+                            }, '*')
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error when deleted triple.')
+                            throw ''
+                        }
+                    })
+            },
+            createEntity() {
+                if (this.$refs.entityForm.validate()) {
+                    if (flattenListOfNode([this.tree]).map(n => n.name).includes(this.entity_name)) {
+                        let node = recursiveSearch(this.tree, this.entity_name)
+                        let el = node._vue.$el
+                        el.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center"
+                        })
+                        let ev = new Event("mousedown")
+                        let offset = el.getBoundingClientRect()
+                        ev.clientX = offset.left + 1
+                        ev.clientY = offset.top + 1
+                        el.dispatchEvent(ev)
+                        el.dispatchEvent(new Event("mouseup"))
+                    } else {
+                        let entity = traversal(this.entity_name, [...this.triples], this.activities)
+                        sortChildren(entity)
+                        allocate(entity, 0, entity)
+                        entity.notSync = false
+                        this.deck = [entity]
+
+                    }
+                }
+            },
+            openEntityEditor(name) {
+                this.editor_bc.postMessage({
+                    message: "entityEditor-close"
+                }, '*')
+                let width = 0.35 * document.documentElement.clientWidth
+                let left = (1 - 0.35) * document.documentElement.clientWidth
+                window.open("{{url_for('instructor.entityEditor')}}/" +
+                    "{{courseCode}}/" +
+                    name,
+                    "",
+                    "popup=true,resizable=no, width=" + width + ",left=" + left).focus()
+            },
+            backToEntityEditor() {
+                this.editor_bc.addEventListener('message', (e) => {
+                    const {
+                        message,
+                        payload
+                    } = e.data
+                    if (message == "entityEditor-focusEcho") {
+                        this.openEntityEditor(payload)
+                    }
+                }, {
+                    once: true
+                })
+                this.editor_bc.postMessage({
+                    message: 'entityEditor-focus'
+                })
+            },
+            exposeWorkspace() {
+                this.$root.actionDisplay("You are publishing workspace:" + this.graph.tag, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.graph.patch') }}" + this.graph.deltaGraphId, {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                isExposed: true,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'update failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.graph.isExposed = true
+                                    this.editor_bc.postMessage({
+                                        message: 'coursePlan-exposureToggle',
+                                        payload: this.graph
+                                    }, '*')
+                                })
+                        })
+                })
+            },
+            // {% elif request.blueprint == "DLTC" %}
+            submitTable() {
+                this.preview = false
+                function recursiveSubmit(node) {
+                    if (node.notSync) {
+                        node._vue.sync()
+                    }
+                    flattenSchedule(node.schedule).filter(node => node.notSync).forEach(child =>
+                        recursiveSubmit(child))
+                }
+                recursiveSubmit(this.tree)
+            },
+            // {% endif %}
+        },
+        mounted: function () {
+            // {% if request.blueprint == "instructor" %}
+            window.addEventListener('beforeunload', (e) => {
+                this.countNotSync()
+                if (this.unsyncedCount > 0) {
+                    e.preventDefault()
+                    e.returnValue = this.unsyncedCount + 'changes are still uploading';
+                }
+            });
+            this.editor_bc.onmessage = (e) => {
+                if (e.data) {
+                    const {
+                        message,
+                        payload
+                    } = e.data
+                    console.log(e.data)
+                    if (message == "graphEditor-exposureToggle" || message ==
+                        "coursePlan-exposureToggle") {
+                        if (payload.deltaGraphId == this.graph.deltaGraphId) {
+                            this.graph.isExposed = payload.isExposed
+                        }
+                        if (
+                            (payload.isExposed && payload.deltaGraphId != this.graph.deltaGraphId) ||
+                            !this.graph.isExposed) {
+                            this.loadData()
+                        }
+                    } else if (message == "graphEditor-createTriple") {
+                        this.triples.push(payload)
+                        this.constructTimetable(this.triples, this.activities)
+
+                    } else if (message == "graphEditor-deleteTriple") {
+                        this.triples = this.triples.filter(triple => {
+                            return triple.h_name != payload.h_name ||
+                                triple.r_name != payload.r_name ||
+                                triple.t_name != payload.t_name
+                        })
+                        this.constructTimetable(this.triples, this.activities)
+                    } else if (message == "entityEditor-visibility") {
+                        this.isEntityEditorVisible = payload
+                    } else if (message == "coursePlan-decapitate") {
+                        this.triples = this.triples.filter(triple => {
+                            return payload.filter(removed => triple.h_name == removed.h_name &&
+                                triple.r_name == removed.r_name &&
+                                triple.t_name == removed.t_name).length == 0
+                        })
+                        this.constructTimetable(this.triples, this.activities)
+                    } else if (message == "coursePlan-exclusiveHeadTriple") {
+                        this.triples = this.triples.filter(triple => {
+                            return triple.h_name != payload.h_name
+                        })
+                        this.triples.push(payload)
+                    }
+                }
+            }
+            this.editor_bc.postMessage({
+                message: 'entityEditor-isVisible'
+            }, '*')
+
+
+            // {% endif %}
+            let loadDataPromise = this.loadData()
+            this.wheelInterval = setInterval(() => {
+                this.showMenuTips = true
+            }, 10000)
+            try {
+                if (window.self !== window.top) {
+                    throw ''
+                }
+            } catch (e) {
+                this.inIframe = true
+                window.parent.postMessage({
+                    message: 'coursePlan-mount'
+                }, '*')
+                window.parent.addEventListener('beforeunload', (e) => {
+                    this.countNotSync()
+                    if (this.unsyncedCount > 0) {
+                        e.preventDefault()
+                        e.returnValue = this.unsyncedCount + 'changes are still uploading';
+                    }
+                });
+            }
+            window.onmessage = (e) => {
+                const {
+                    message,
+                    payload
+                } = e.data
+                if (message == "graphEditor-workspace") {
+                    this.workspace = payload
+
+                }
+            }
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+
+    function updateItem(item) {
+        app.$emit('post-activity', item)
+    }
+</script>
+{% endblock %}

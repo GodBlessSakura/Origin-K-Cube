@@ -1,0 +1,107 @@
+{% macro componentContent() %}
+<v-card>
+
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-comprehensive-insight">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-comprehensive-insight', {
+        data: () => ({
+            metricsVisualization: {
+                thickness: 3,
+                metric: undefined,
+                zeroColor: {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                },
+                oneColor: {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                },
+            }
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.triple.query', aggregated=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.triples) {
+
+                            let nodeSet = new Set()
+                            body.triples.forEach(triple => {
+                                edges.add(
+                                    edgeFactory({
+                                        from: triple.h_name,
+                                        to: triple.t_name,
+                                        label: triple.r_name,
+                                        vote: triple.trunkVote
+                                    })
+                                )
+                                nodeSet.add(triple.h_name)
+                                nodeSet.add(triple.t_name)
+                            });
+                            nodeSet.forEach(node => {
+                                nodes.add(nodeFactory({
+                                    name: node
+                                }))
+                            })
+                            body.courses.forEach(course => {
+
+                                nodes.update(nodeFactory({
+                                    name: course.concept.name,
+                                    imageURL: course.course.imageURL,
+                                }))
+                            })
+                            let data = {
+                                nodes: nodes,
+                                edges: edges,
+                            };
+                            let container = document.getElementById("editor");
+                            let options = {
+                                interaction: {
+                                    selectConnectedEdges: false,
+                                },
+                                physics: {
+                                    repulsion: {
+                                        springLength: 800
+                                    }
+                                }
+                            };
+                            network = new vis.Network(container, data, options);
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting draft information.')
+
+                        }
+                    })
+            }
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#kcube-comprehensive-insight',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}

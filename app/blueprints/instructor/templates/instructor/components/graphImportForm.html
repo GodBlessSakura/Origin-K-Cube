@@ -1,0 +1,116 @@
+{% macro componentContent() %}
+<v-card flat>
+    <v-card-title class="text-h5 grey lighten-2">
+        Import graph for ${courseCode}:
+    </v-card-title>
+    <v-form ref="graphImportControl">
+        <v-autocomplete return-object :items="trunkOrBranch" item-text="tag" item-value="deltaGraphId"
+            v-model="selectedNode" label="base on version (★ for the active version provided by the department):">
+            <template v-slot:selection="data">
+                <template>
+                    <v-chip>
+                        <v-list-item-content v-text="data.item.tag">
+                        </v-list-item-content>
+                        <v-icon v-if="data.item.isActive" small>star</v-icon>
+                    </v-chip>
+                </template>
+            </template>
+            <template v-slot:item="data">
+                <template>
+                    <v-list-item-content v-text="data.item.tag">
+                    </v-list-item-content>
+                    <v-icon v-if="data.item.isActive" small>star</v-icon>
+                </template>
+            </template>
+        </v-autocomplete>
+    </v-form>
+    <v-divider></v-divider>
+    <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" text @click="openImportGraphPage()">
+            start import
+        </v-btn>
+    </v-card-actions>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-graphImport-form">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-graphImport-form', {
+        data: () => ({
+            courseCode: null,
+            trunkOrBranch: undefined,
+            selectedNode: undefined,
+        }),
+        methods: {
+            loadData(courseCode) {
+                this.courseCode = courseCode
+                this.$root.progress.show = true
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get') }}" + this.courseCode +
+                        "?isInstructor=True&amp;isDLTC=False", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.trunkOrBranch = [];
+                        if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                            this.trunkOrBranch = [];
+                            [body.trunk_nodes, body.branch_nodes].forEach(nodes => {
+                                nodes.forEach(node => {
+                                    let item = {
+                                        tag: node.property.tag,
+                                        deltaGraphId: node.property.deltaGraphId,
+                                        isActive: node.isActive
+                                    }
+                                    this.trunkOrBranch.push(item)
+                                    if (item.tag == 'init') {
+                                        this.selectedNode = item
+                                    }
+                                })
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+                Promise.all([treePromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            openImportGraphPage() {
+                if (this.$refs.graphImportControl.validate()) {
+                    url = "{{ url_for('instructor.graphImport')}}" + this.selectedNode.deltaGraphId
+                    if (window.location !== window.parent.location) {
+                        let w = window.open(url, '_blank')
+                    } else {
+                        window.location.href = url
+                    }
+                }
+            },
+
+        },
+        template: '#kcube-graphImport-form',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

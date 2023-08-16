@@ -1,0 +1,114 @@
+{% macro componentContent() %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-col cols="2">
+            </v-col>
+            <v-col v-for="field in fields">
+                ${field}
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                node-color
+            </v-col>
+            <v-col v-for="field in fields">
+                <iro-color-picker @input="optionChanged()" canvas-height="50" :width="200"
+                    v-model="cyStylesOptions[field]['node-color']" hide-mode-switch>
+                </iro-color-picker>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                line-color
+            </v-col>
+            <v-col v-for="field in fields">
+                <iro-color-picker @input="optionChanged()" canvas-height="50" :width="200"
+                    v-model="cyStylesOptions[field]['line-color']" hide-mode-switch>
+                </iro-color-picker>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                selected-color
+            </v-col>
+            <v-col v-for="field in fields">
+                <iro-color-picker @input="optionChanged()" canvas-height="50" :width="200"
+                    v-model="cyStylesOptions[field]['selected-color']" hide-mode-switch>
+                </iro-color-picker>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                background-color
+            </v-col>
+            <v-col v-for="field in fields">
+                <iro-color-picker @input="optionChanged()" canvas-height="50" :width="200"
+                    v-model="cyStylesOptions[field]['background-color']" hide-mode-switch>
+                </iro-color-picker>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                show "Subtopic in" relationship label
+            </v-col>
+            <v-col v-for="field in fields">
+                <v-checkbox @change="optionChanged()" v-model="cyStylesOptions[field]['showDefaultRelationLabel']">
+                </v-checkbox>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="2">
+                show node label
+            </v-col>
+            <v-col v-for="field in fields">
+                <v-checkbox @change="optionChanged()" v-model="cyStylesOptions[field]['showNodeLabel']">
+                </v-checkbox>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-btn @click="reset()">reset</v-btn>
+        </v-row>
+    </v-container>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-cy-options-dialog">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script src="https://unpkg.com/vue-iro-color-picker@2.0.0/dist/VueIroColorPicker.umd.min.js"></script>
+<script>
+    Vue.component('iro-color-picker', VueIroColorPicker);
+    Vue.component('kcube-cy-options-dialog', {
+        data: () => ({
+            cyStylesOptions: cyStylesOptions
+        }),
+        props: {
+            fields: {
+                default: () => (['editor', 'viewer'])
+            }
+        },
+        methods: {
+            optionChanged() {
+                cyStylesOptions = this.cyStylesOptions
+                cyStylesUtil.setLocal()
+                cytoscapeInstance.forEach(instance => {
+                    instance.cy.style(cyStyles[instance.options])
+                    instance.cy.container().style.background = cyStyles[instance.options].filter(
+                        sheet => sheet.selector == 'background-color')[0].style["background-color"]
+                })
+            },
+            reset() {
+                cyStylesUtil.setDefault()
+                this.cyStylesOptions = cyStylesOptions
+                cyStylesUtil.setLocal()
+                this.optionChanged()
+            }
+        },
+        template: '#kcube-cy-options-dialog',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}

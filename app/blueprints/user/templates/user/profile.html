@@ -1,0 +1,192 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-form ref="formControl">
+        <v-container>
+            <v-row>
+                <v-col cols='2' style="align-items: center;display: grid;">User ID</v-col>
+                <v-col>
+                    {{session['user'].userId}}
+                </v-col>
+            </v-row>
+            {% if "OIDC" not in config %}
+            <v-row>
+                <v-col cols='2' style="align-items: center;display: grid;">User Name</v-col>
+                <v-col>
+                    <v-text-field single-line dense v-model="userName" :rules="userNameRules"> </v-text-field>
+                </v-col>
+            </v-row>
+            {% endif %}
+            <v-row>
+                <v-col cols='2' style="align-items: center;display: grid;">Email </v-col>
+                <v-col>
+                    {% if "OIDC" not in config %}
+                    <v-text-field single-line dense v-model="email" :rules="emailRuels"> </v-text-field>
+                    {% else %}
+                    {{session['user'].email}}
+                    {% endif %}
+                </v-col>
+            </v-row>
+            {% if "OIDC" not in config %}
+            <v-row>
+                <v-col cols='2' style="align-items: center;display: grid;">
+                    Verified
+                </v-col>
+                <v-col>
+                    <v-checkbox readonly
+                        {{ ('input-value="true"' if USER.verified else '@click="tryVerification()"')| safe}}
+                        :label="{{ 'true' if USER.verified else 'false'}}?'':'send verification mail'">
+                    </v-checkbox>
+                </v-col>
+            </v-row>
+            <v-row>
+                <v-col></v-col>
+                <v-col cols='1'>
+                    <v-btn @click="update()">update</v-btn>
+                </v-col>
+            </v-row>
+            {% endif %}
+            <v-row>
+                <v-expansion-panels>
+                    <v-expansion-panel>
+                        <v-expansion-panel-header>
+                            permissions
+                        </v-expansion-panel-header>
+                        <v-expansion-panel-content>
+                            <v-list>
+                                <v-list-item>
+                                    <v-btn href="{{ url_for('user.refreshPermission') }}">renew permission</v-btn>
+                                </v-list-item>
+                                {% if PERMISSION and PERMISSION.role and ("admin" in PERMISSION.role or "DLTC" in
+                                PERMISSION.role) %}
+                                {% for permission in PERMISSION %}
+                                <v-list-item>
+                                    {{ permission }} : {{ PERMISSION[permission] }}
+                                </v-list-item>
+                                {% endfor %}
+                                {% endif %}
+                            </v-list>
+                        </v-expansion-panel-content>
+                    </v-expansion-panel>
+                </v-expansion-panels>
+            </v-row>
+        </v-container>
+    </v-form>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+            userName: "{{USER.userName}}",
+            email: "{{USER.email}}",
+            userNameRules: [
+                v => !!v || 'Name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["userName"]}}/.test(v)) ||
+                'Name can only contains alphanumeric characters and space.'
+            ],
+            emailRuels: [
+                v => !!v || 'E-mail is required',
+                v => (v && v.length < 320) || 'A valid email should have less then 320 characters',
+                v => (v && /{{regExpRules["email"]}}/.test(v)) ||
+                'E-mail must be in valid format',
+            ],
+        }),
+        methods: {
+            renewPermission() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('user.refreshPermission') }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.responseSnackBar(body, 'Unexpected error on renewing permission.',
+                            location.reload)
+                    })
+            },
+            update() {
+                if (this.$refs.formControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('user.patch') }}", {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                userName: this.userName,
+                                email: this.email
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Update failed for unknown reason.',
+                                location.reload.bind(window.location))
+                        })
+                }
+            },
+            tryVerification() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('user.verify') }}", {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Update failed for unknown reason.')
+                    })
+            }
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

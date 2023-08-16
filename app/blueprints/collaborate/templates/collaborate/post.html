@@ -1,0 +1,145 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<div>
+    <v-card v-if="post">
+        <v-card-title>
+            Title: ${post.title}
+        </v-card-title>
+        <v-card-subtitle>
+            ${post.user} :
+        </v-card-subtitle>
+        <v-card-text>
+            ${post.text}
+        </v-card-text>
+        <v-card-text>
+            ${post.creationDate | formatDate}
+        </v-card-text>
+    </v-card>
+    <v-card v-for="reply in replies">
+        <v-card-subtitle>
+            ${reply.user} :
+        </v-card-subtitle>
+        <v-card-text>
+            ${reply.text}
+        </v-card-text>
+        <v-card-text>
+            ${reply.creationDate | formatDate}
+        </v-card-text>
+    </v-card>
+    <v-bottom-sheet value="true" hide-overlay persistent>
+        <v-form ref='replyFormControl'>
+            <v-btn v-if="!showTextarea" @click="showTextarea = !showTextarea" dense block>
+                reply
+            </v-btn>
+            <v-btn v-if="showTextarea" color="error" @click="showTextarea = !showTextarea" dense block>
+                close
+            </v-btn>
+            <v-textarea v-if="showTextarea" counter v-model="replyText" :rules="replyTextRules"
+                label="Type your reply here">
+            </v-textarea>
+            <v-btn v-if="showTextarea" @click="submit()" block>
+                reply
+            </v-btn>
+        </v-form>
+    </v-bottom-sheet>
+</div>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            post: null,
+            replies: [],
+            replyText: '',
+            replyTextRules: [v => !!v || 'Content is required',
+                v => (v && v.length > 3 && v.length < 501) ||
+                'Content should be anything between 4 and 500 charactors',
+            ],
+            showTextarea: false
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let feedbackPromise = fetch(
+                        "{{ url_for('RESTful.feedback.get', id = id)}}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.feedbacks = []
+                        if (body.post && body.replies) {
+                            this.replies = body.replies.sort((a, b) => {
+                                return ((new Date(a.creationDate)) - (new Date(b
+                                    .creationDate))) // * -1
+                            })
+                            this.post = body.post
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting feedbacks information.')
+                        }
+                    })
+                Promise.all([feedbackPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            submit() {
+                if (this.$refs.replyFormControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.feedback.postReply', id = id) }}", {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                text: this.replyText
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body, 'Creation failed for unknown reason.',
+                                this.loadData)
+                        })
+                }
+
+            }
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

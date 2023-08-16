@@ -1,0 +1,290 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table show-group-by :headers="headers" style="width:100%" :items="versions" :items-per-page="500"
+                multi-sort :search="search">
+                <template v-slot:item.actions="{ item }">
+                    <v-row>
+                        <v-col cols="auto">
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn icon v-bind="attrs" v-on="on"
+                                        :href="'{{ url_for('collegue.compare')}}' + item.deltaGraphId + '/' + item.parent.property.deltaGraphId">
+                                        <v-icon>
+                                            preview
+                                        </v-icon>
+                                    </v-btn>
+                                </template>
+                                view changes
+                            </v-tooltip>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn icon v-bind="attrs" v-on="on"
+                                        :href="'{{ url_for('instructor.graphImport')}}' + item.deltaGraphId">
+                                        <v-icon>
+                                            data_object
+                                        </v-icon>
+                                    </v-btn>
+                                </template>
+                                json import
+                            </v-tooltip>
+                        </v-col>
+                        <v-col>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <span>
+                                        <v-btn icon v-bind="attrs" v-on="on" v-if="item.workspaces?.length==1"
+                                            :href="'{{ url_for('instructor.workspace')}}' + item.workspaces[0].deltaGraphId">
+                                            <v-icon>
+                                                work
+                                            </v-icon>
+                                        </v-btn>
+                                        <v-autocomplete dense append-outer-icon="work" v-bind="attrs" v-on="on"
+                                            item-text="tag" item-value="deltaGraphId" v-if="item.workspaces?.length>1"
+                                            :items="item.workspaces"
+                                            @change="this.window.open('{{ url_for('instructor.workspace')}}' + $event, '_blank')">
+                                            <template v-slot:item="data">
+                                                <v-list-item-content>
+                                                    ${data.item.tag!=''?data.item.tag:'(unnamed)'}
+                                                </v-list-item-content>
+                                            </template>
+                                        </v-autocomplete>
+                                        <v-btn icon v-bind="attrs" v-on="on" v-if="item.workspaces.length == 0"
+                                            @click="createWorkspaceDialogue(item.deltaGraphId)">
+                                            <v-icon>
+                                                work_outline
+                                            </v-icon>
+                                        </v-btn>
+                                    </span>
+                                </template>
+                                ${item.workspaces?'workspace' + (item.workspaces.length==1?'':'s') +' for latest'+
+                                ' version':'create workspace for latest version'}
+                            </v-tooltip>
+                        </v-col>
+                    </v-row>
+                </template>
+                <template v-slot:item.creationDate="{ item }">
+                    ${item.creationDate | formatDate}
+                </template>
+
+                <template v-slot:item.pullRequest="{ item }">
+                    <v-simple-checkbox :value="item.pullRequest" readonly color="info"
+                        @click="readyToPush(item.deltaGraphId,!item.pullRequest)"></v-simple-checkbox>
+                </template>
+            </v-data-table>
+        </v-row>
+    </v-container>
+    <v-dialog v-model="workspaceCreateDialog">
+        <v-card>
+            <v-card-title class="text-h5 grey lighten-2">
+                Give a name tag to your new workspace:
+            </v-card-title>
+            <v-form ref="createWorkspaceControl">
+                <v-text-field label="tag" :rules="tagRules" v-model="tag" required></v-text-field>
+            </v-form>
+            <v-divider></v-divider>
+
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" text @click="createWorkspace()">
+                    create
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+</v-card>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.filter("formatDate", (value) => {
+        if (value) {
+            return (new Date(value)).toLocaleString("en-US", {})
+        }
+    })
+    Vue.component('app-content', {
+        data: () => ({
+            search: new URLSearchParams(window.location
+                .search).get('concept'),
+            versions: [],
+            headers: [{
+                    text: 'tag',
+                    value: 'tag',
+                    groupable: false,
+                },
+                {
+                    text: 'creation date',
+                    value: 'creationDate',
+                    groupable: false,
+                },
+                {
+                    text: '',
+                    value: 'info',
+                    groupable: false,
+                },
+                {
+                    text: 'pull request made',
+                    value: 'pullRequest'
+                },
+                {
+                    text: '',
+                    value: 'actions',
+                    groupable: false,
+                },
+            ],
+            workspaceCreateDialog: false,
+            tag: '',
+            tagRules: [v => !!v || 'Tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get', courseCode = courseCode, isInstructor = True, isDLTC = False) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.versions = []
+                        if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                            let candidate = body.edges.filter(e => e.start ==
+                                "{{ id }}")
+                            do {
+                                let cursor = candidate[0].start
+                                let branch = body.branch_nodes.filter(b => b.id == cursor)[0]
+                                let parent = body.branch_nodes.filter(b => b.id == candidate[0].end)[0]
+                                parent = parent ? parent : body.trunk_nodes.filter(b => b.id == candidate[0]
+                                    .end)[0]
+                                let work_on_candidate = body.edges.filter(e => e.type ==
+                                    "WORK_ON" && e.end == cursor)
+                                let workspaces = work_on_candidate.map(we => {
+                                    return body.workspace_nodes
+                                        .filter(w => w.id == we.start)[0].property
+                                }).sort(function (a, b) {
+                                    return new Date(b.lastModified) - new Date(a.lastModified);
+                                })
+                                this.versions.push({
+                                    tag: branch.property.tag,
+                                    creationDate: branch.property.creationDate,
+                                    owned: branch.isOwner,
+                                    exposed: branch.isExposed,
+                                    deltaGraphId: branch.property.deltaGraphId,
+                                    parent: parent,
+                                    workspaces: workspaces,
+                                    pullRequest: branch.property.canPull ? true : false
+                                })
+                                candidate = body.edges.filter(e => e.type == "PATCH" && e.end &&
+                                    e.end == cursor)
+                            }
+                            while (candidate.length > 0)
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+                Promise.all([treePromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            newTab(id) {
+                let w = window.open("{{ url_for('instructor.repositoryVersions', courseCode=courseCode) }}/" +
+                    id, '_blank')
+            },
+            readyToPush(id, value) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.branch.patch') }}" + id, {
+                        method: 'PATCH',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            canPull: value
+                        })
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Creation failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            createWorkspaceDialogue(deltaGraphId) {
+                this.workspaceCreateDialog = true
+                this.deltaGraphId = deltaGraphId
+            },
+            createWorkspace() {
+                if (this.$refs.createWorkspaceControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.workspace.post') }}" + this.deltaGraphId, {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                tag: this.tag,
+                            })
+                        })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.workspaceCreateDialog = false
+                                    this.$refs.createWorkspaceControl.reset()
+                                    this.loadData()
+                                })
+                        })
+                }
+            },
+        },
+        mounted: function () {
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

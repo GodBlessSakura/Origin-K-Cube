@@ -1,0 +1,2220 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-container dense
+    style="height: calc(100vh - 64px); width: calc(100vw - 50px); margin: 0; max-width: none; padding: unset">
+    <v-btn style="position: fixed; top:0; left:0; height: 96px; width: 96px; min-width: unset; z-index: 1000; background-color: rgba(200, 200, 200, 0.5);
+    transform: translate(-50%,-50%) rotate(45deg);" @click="fullScreenMode = !fullScreenMode">
+    </v-btn>
+    <v-icon style="transform: rotate(90deg); position: fixed; top: 12px; left:12px;  z-index: 1001;" small
+        v-if="fullScreenMode" @click="fullScreenMode = !fullScreenMode">north_east
+    </v-icon>
+    <v-icon style="transform: rotate(270deg); position: fixed; top:12px; left:12px; z-index: 1001;" small v-else
+        @click="fullScreenMode = !fullScreenMode">
+        north_east</v-icon>
+
+    <v-row no-gutters>
+        <v-col cols="auto">
+            <v-avatar>
+                <v-icon x-large>work</v-icon>
+            </v-avatar>
+        </v-col>
+        <v-col>
+            <v-row no-gutters>
+                <v-col cols="auto">
+                    <v-text-field v-model="workspace.tag" hide-details @input="changeWorkspaceTag"></v-text-field>
+                </v-col>
+                <v-col cols="auto">
+                    <v-list-item>
+                        <v-list-item-subtitle># of uncommitted changes: ${activePositiveEdgeCount +
+                            activeNegativeEdgeCount}</v-list-item-subtitle>
+                        <v-tooltip bottom v-if="activePositiveEdgeCount + activeNegativeEdgeCount">
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-list-item-icon v-bind="attrs" v-on="on">
+                                    <v-icon>help_outline</v-icon>
+                                </v-list-item-icon>
+                            </template>
+                            <span style="font-size: small;">
+                                Uncommitted changes are active triple proposal/removal <br>
+                                that is in the workspace but NOT in the patch. <br>
+                                Changes can be previewed in the preview page / "view diff" mode.
+                            </span>
+                        </v-tooltip>
+                    </v-list-item>
+                </v-col>
+                <v-divider vertical dense></v-divider>
+                <v-col cols="auto">
+                    <v-tooltip :disabled="workspace?.isExposed" bottom>
+                        <template v-slot:activator="{ on: tooltipOn, attrs: tooltipAttrs }">
+                            <v-menu offset-y>
+                                <template v-slot:activator="{ on: menutipOn, attrs: menuAttrs }">
+                                    <v-list-item v-bind="{...tooltipAttrs,...menuAttrs}"
+                                        v-on="{...tooltipOn,...menutipOn}" ref="shepherd-coursePlan">
+                                        <v-list-item-subtitle>${subject?.courseCode} course plan
+                                        </v-list-item-subtitle>
+                                        <v-list-item-icon>
+                                            <v-icon v-if="!workspace?.isExposed">
+                                                error_outline</v-icon>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </template>
+                                <v-list>
+                                    <v-list-item
+                                        @click="coursePlanDialogue = !coursePlanDialogue; tripleBottomSheet = coursePlanDialogue?false:tripleBottomSheet ">
+                                        <v-list-item-subtitle>open here
+                                        </v-list-item-subtitle>
+                                    </v-list-item>
+                                    <v-list-item
+                                        @click="this.window.open('{{ url_for('instructor.coursePlan')}}' + subject.courseCode, 'graphEditorCoursePlanEditor')">
+                                        <v-list-item-subtitle>open in new tab
+                                        </v-list-item-subtitle>
+                                        <v-list-item-icon>
+                                            <v-icon>open_in_new</v-icon>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </v-list>
+                            </v-menu>
+                        </template>
+                        <span style="font-size: small;">
+                            Course plan only reflects contents on published graph.<br>
+                            The workspace is not published.<br>
+                        </span>
+                    </v-tooltip>
+                </v-col>
+                <v-col cols="auto">
+                    <v-tooltip color="warning"
+                        :value="workspace?.isExposed && ! subject?.isTeaching && '{{USER.userId}}' == workspace.owner.userId"
+                        bottom>
+                        <template v-slot:activator="{ on }">
+                            <v-list-item @click="toggleJoin()"
+                                :disabled="workspace.owner == null || '{{USER.userId}}' != workspace.owner.userId">
+                                <v-list-item-title>${subject?.isTeaching?'on-duty':'off-duty'}</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-simple-checkbox :value="subject?.isTeaching" @click="toggleJoin()"
+                                        :disabled="workspace.owner == null || '{{USER.userId}}' != workspace.owner.userId">
+                                    </v-simple-checkbox>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </template>
+                        <span style="font-size:small"> An published graph is not shown to student,<br> if instructor
+                            is off-duty.</span>
+                    </v-tooltip>
+                </v-col>
+                <v-divider vertical></v-divider>
+                <v-col cols="auto">
+                    <v-tooltip color="warning" :value="!workspace?.isExposed && coursePlanDialogue" bottom>
+                        <template v-slot:activator="{ on }">
+                            <v-list-item @click="toggleExposure(workspace)"
+                                :disabled="workspace.owner == null || '{{USER.userId}}' != workspace.owner.userId">
+                                <v-list-item-title>published</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-simple-checkbox :value="workspace?.isExposed" @click="toggleExposure(workspace)"
+                                        :disabled="workspace.owner == null || '{{USER.userId}}' != workspace.owner.userId">
+                                    </v-simple-checkbox>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </template>
+                        <span style="font-size:small">
+                            Course plan only reflects contents on published graph.<br>
+                            The workspace is not published.<br>
+                        </span>
+                    </v-tooltip>
+                </v-col>
+                <v-spacer></v-spacer>
+                <v-col cols="auto">
+                    <v-tooltip color="warning" :value="!workspace?.isExposed && coursePlanDialogue" bottom>
+                        <template v-slot:activator="{ on }">
+                            <v-dialog max-width="700px">
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-list-item dense v-bind="attrs" v-on="on">
+                                        <v-list-item-title>coauthor</v-list-item-title>
+                                        <v-list-item-icon>
+                                            <v-icon>group</v-icon>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </template>
+                                <kcube-coauthor-form deltaGraphId="{{deltaGraphId}}"></kcube-coauthor-form>
+                            </v-dialog>
+                        </template>
+                        <span style="font-size:small">
+                            Allow colleuges to edit the same graph with you.
+                        </span>
+                    </v-tooltip>
+                </v-col>
+            </v-row>
+            <v-row no-gutters>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn small tile outlined elevation="0" style="text-transform: none;" v-bind="attrs"
+                                v-on="on" tile>
+                                commit changes
+                            </v-btn>
+                        </template>
+                        <v-list>
+                            <v-list-item dense href="{{ url_for('instructor.commit', overwriterId=deltaGraphId) }}">
+                                <v-list-item-title>preview changes</v-list-item-title>
+                            </v-list-item>
+                            <v-tooltip bottom :disabled="activePositiveEdgeCount + activeNegativeEdgeCount != 0">
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-list-item dense @click="activePositiveEdgeCount + activeNegativeEdgeCount == 0?
+                                    null:showCommitExposeDialogue()" v-bind="attrs" v-on="on">
+                                        <v-list-item-title>commit and publish</v-list-item-title>
+                                    </v-list-item>
+                                </template>
+                                <span style="font-size: small;">
+                                    There are no uncommitted changes.
+                                </span>
+                            </v-tooltip>
+                            <v-list-item dense @click="deleteSelectBar = true">
+                                <v-list-item-title>delete workspace</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-menu>
+                </v-col>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn id="patchMenu" small tile outlined elevation="0" style="text-transform: none;"
+                                v-bind="attrs" v-on="on" tile>
+                                patch
+                                <v-icon v-if="!subject?.isPatchLeaf">
+                                    sync
+                                </v-icon>
+                            </v-btn>
+                        </template>
+                        <v-list>
+                            <v-list-item v-if="activePositiveEdgeCount + activeNegativeEdgeCount > 0" dense>
+                                <v-list-item-subtitle># of uncommitted <br> changes: ${activePositiveEdgeCount +
+                                    activeNegativeEdgeCount}</v-list-item-subtitle>
+                                <v-tooltip bottom v-if="activePositiveEdgeCount + activeNegativeEdgeCount">
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-list-item-icon v-bind="attrs" v-on="on">
+                                            <v-icon>error_outline</v-icon>
+                                        </v-list-item-icon>
+                                    </template>
+                                    <span style="font-size: small;">
+                                        Uncommitted changes are temporary triple proposal/removal <br>
+                                        that is in the workspace but NOT in the patch. <br>
+                                        As they are not in the patch, they would not be refleced<br>
+                                        in any form of patch publishment. <br>
+                                    </span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item v-if="subject?.isExposed && ! subject?.isTeaching" dense>
+                                <v-list-item-subtitle>You haven't join the course<br>(You may join in
+                                    "publish patch")</v-list-item-subtitle>
+                                <v-tooltip bottom v-if="activePositiveEdgeCount + activeNegativeEdgeCount">
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-list-item-icon v-bind="attrs" v-on="on">
+                                            <v-icon>error_outline</v-icon>
+                                        </v-list-item-icon>
+                                    </template>
+                                    <span style="font-size: small;">
+                                        Student can only view published graph from <br>
+                                        instructors who had joined that course.
+                                    </span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-divider v-if="activePositiveEdgeCount + activeNegativeEdgeCount > 0"></v-divider>
+                            <v-list-item dense>
+                                <v-list-item-subtitle style="font-size: small;">patch:<br>${subject?.tag}
+                                </v-list-item-subtitle>
+                            </v-list-item>
+                            <v-list-item dense v-if="!subject?.isPatchLeaf" @click="sync()">
+                                <v-list-item-title>sync</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>sync</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-list-item dense v-else>
+                                <v-list-item-subtitle style="font-size: small;">Already editing<br>latest patch
+                                </v-list-item-subtitle>
+                                <v-list-item-icon>
+                                    <v-icon>done</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-list-item dense
+                                @click="this.window.open('{{ url_for('instructor.branch')}}' + subject.deltaGraphId + '/' + subject.predecessor, '_blank')">
+                                <v-list-item-subtitle style="font-size: small;">view patch &<br>predecessor
+                                </v-list-item-subtitle>
+                                <v-list-item-icon>
+                                    <v-icon>open_in_new</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-menu offset-x>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-list-item dense v-bind="attrs" v-on="on">
+                                        <v-list-item-subtitle style="font-size: small;">publish patch
+                                        </v-list-item-subtitle>
+                                        <v-list-item-icon>
+                                            <v-icon>chevron_right</v-icon>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </template>
+                                <v-list>
+                                    <v-list-item dense>
+                                        <v-list-item-subtitle>submit to DLTC</v-list-item-subtitle>
+                                    </v-list-item>
+                                    <v-list-item dense @click="toggleCanPull()">
+                                        <v-list-item-title>submitted</v-list-item-title>
+                                        <v-list-item-icon>
+                                            <v-simple-checkbox :value="subject?.canPull" @click="toggleCanPull()">
+                                            </v-simple-checkbox>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </v-list>
+                            </v-menu>
+                        </v-list>
+                    </v-menu>
+                </v-col>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn small tile outlined elevation="0" style="text-transform: none;" v-bind="attrs"
+                                v-on="on" tile>
+                                layout
+                            </v-btn>
+                        </template>
+                        <v-list>
+                            <v-list-item dense @click="editorFit()">
+                                <v-list-item-title>fit graph</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>fit_screen</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-list-item dense @click="redoLayout(false)">
+                                <v-list-item-title>tidy layout</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon></v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-list-item dense @click="physics(!isPhysicsRunning)">
+                                <v-list-item-title>layout physics
+                                </v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-simple-checkbox :value="isPhysicsRunning" @click="physics(!isPhysicsRunning)">
+                                    </v-simple-checkbox>
+                                </v-list-item-icon>
+                            </v-list-item>
+                            <v-dialog max-width="700px">
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-list-item dense v-bind="attrs" v-on="on">
+                                        <v-list-item-title>graph<br>options</v-list-item-title>
+                                        <v-list-item-icon>
+                                            <v-icon>palette</v-icon>
+                                        </v-list-item-icon>
+                                    </v-list-item>
+                                </template>
+                                <kcube-cy-options-dialog></kcube-cy-options-dialog>
+                            </v-dialog>
+                        </v-list>
+                    </v-menu>
+                </v-col>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn small tile outlined elevation="0" style="text-transform: none;" v-bind="attrs"
+                                v-on="on" tile>
+                                visualization
+                            </v-btn>
+                        </template>
+                        <v-list>
+                            <!-- <v-list-item dense @click="edgeStyleDialogue = true">
+                        <v-list-item-title>edge style<br>option</v-list-item-title>
+                        <v-list-item-icon>
+                            <v-icon>settings</v-icon>
+                        </v-list-item-icon>
+                    </v-list-item> -->
+                            <v-list-item dense @click="metricsBottomSheet = true">
+                                <v-list-item-title>centrality<br>metrics</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>insights</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </v-list>
+                    </v-menu>
+                </v-col>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn small tile outlined elevation="0" style="text-transform: none;" v-bind="attrs"
+                                v-on="on" tile>
+                                triple tools
+                            </v-btn>
+                        </template>
+                        <!-- <v-list>
+                            <v-list-item dense @click="removeUnreachable">
+                                <v-list-item-title>remove<br>unreachable</v-list-item-title>
+                                <v-list-item-icon>
+                                    <v-icon>cleaning_services</v-icon>
+                                </v-list-item-icon>
+                            </v-list-item>
+                        </v-list> -->
+                        <v-dialog max-width="700px" v-model="importDialogue">
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-list-item dense v-bind="attrs" v-on="on">
+                                    <v-list-item-title>triples<br>import</v-list-item-title>
+                                    <v-list-item-icon>
+                                        <v-icon>upload</v-icon>
+                                    </v-list-item-icon>
+                                </v-list-item>
+                            </template>
+                            <kcube-triplesImport-form @triples="updateTriples($event); importDialogue = false"
+                                :courseCode="subject.courseCode">
+                            </kcube-triplesImport-form>
+                        </v-dialog>
+                    </v-menu>
+                </v-col>
+                <v-col cols="auto" dense>
+                    <v-menu offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn small tile outlined elevation="0" style="text-transform: none;" v-bind="attrs"
+                                v-on="on" tile>
+                                help
+                            </v-btn>
+                        </template>
+                        <v-list>
+                            <v-list-item dense @click="tutorial">
+                                <v-list-item-title>tutorial</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-menu>
+                </v-col>
+            </v-row>
+        </v-col>
+    </v-row>
+    <v-row dense style="height: calc(100% - 80px); width: 100%;">
+        <v-progress-circular style="display: block; margin: auto auto" indeterminate size="128" v-if="graphLoading">
+        </v-progress-circular>
+        <div id="editor" style="height: 100%; width: 100%;"
+            v-bind:style="{visibility: graphLoading?'hidden':'visible'}">
+            <div style="position: absolute; height: 100%; width: 100%;">
+                <div ref="shepherd-graphNode"
+                    :style="{position: 'relative', height: boundingBox.h +'px', width: boundingBox.w +'px', left: boundingBox.x1 +'px', top: boundingBox.y1 +'px'}">
+                </div>
+            </div>
+        </div>
+    </v-row>
+    <v-bottom-sheet v-model="metricsBottomSheet" insert :hide-overlay="true" no-click-animation>
+        <kcube-metrics-visualize-bottom-sheet></kcube-metrics-visualize-bottom-sheet>
+    </v-bottom-sheet>
+
+    <v-card>
+        <v-bottom-sheet v-model="tripleBottomSheet" :retain-focus="false" inset persistent hide-overlay eager
+            no-click-animation>
+            <template v-slot:activator="{ on, attrs }">
+                <v-bottom-sheet :value="!tripleBottomSheet" :retain-focus="false" inset persistent hide-overlay
+                    no-click-animation>
+                    <v-sheet>
+                        <v-btn :ripple="false" color="success" plain block @click="tripleBottomSheet = true"
+                            ref="shepherd-openTripleFormBtn" elevation="2">
+                            open triple form
+                            <v-icon right>
+                                menu_open
+                            </v-icon>
+                        </v-btn>
+                    </v-sheet>
+                </v-bottom-sheet>
+            </template>
+            <v-sheet>
+                <v-form ref="tripleForm">
+                    <v-container>
+                        <v-row>
+                            <v-btn :ripple="false" color="error" plain block @click="unselectAll" elevation="2">
+                                dismiss
+                                <v-icon right>
+                                    clear_all
+                                </v-icon>
+                            </v-btn>
+                        </v-row>
+                        <v-row ref="shepherd-openTripleFormField">
+                            <v-col>
+                                <v-combobox v-model="h_name" :items="concepts" :rules="nameRules" label="head entity"
+                                    persistent-hint @focus="nodeFieldFocus('head')" @input="nodeFieldChange"
+                                    @keydown="disableButtons()">
+                                    <template v-slot:no-data>
+                                        <v-list-item>
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    No existing graph concept matching "<strong>${ h_name }</strong>".
+                                                    New
+                                                    graph concept would be created. Press
+                                                    <kbd>enter</kbd> or click elsewhere to proceed.
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                    </template>
+                                </v-combobox>
+                            </v-col>
+                            <v-col>
+                                <v-select v-model="r_name" :rules="nameRules" :items="relationships"
+                                    label="relationship" @input="edgeFieldChange" readonly>
+                                </v-select>
+                            </v-col>
+                            <v-col>
+                                <v-combobox v-model="t_name" :items="concepts" :rules="nameRules" label="tail entity"
+                                    persistent-hint @focus="nodeFieldFocus('tail')" @input="nodeFieldChange"
+                                    @keydown="disableButtons()">
+                                    <template v-slot:no-data>
+                                        <v-list-item>
+                                            <v-list-item-content>
+                                                <v-list-item-title>
+                                                    No existing graph concept matching "<strong>${ t_name }</strong>".
+                                                    New
+                                                    graph concept would be created. Press
+                                                    <kbd>enter</kbd> or click elsewhere to proceed.
+                                                </v-list-item-title>
+                                            </v-list-item-content>
+                                        </v-list-item>
+                                    </template>
+                                </v-combobox>
+                            </v-col>
+                        </v-row>
+                        <v-row ref="shepherd-openTripleFormLinkBtn">
+                            <div v-if="diffMode">
+                                <v-btn color="success" @click="createTriple(true)"
+                                    :disabled="!canLinkEdge || !canUpdateEdge">
+                                    associate
+                                </v-btn>
+                                <v-btn color="indigo lighten-2" @click="createTriple(false)"
+                                    :disabled="!canUnlinkEdge || !canUpdateEdge">
+                                    dissociate
+                                </v-btn>
+                                <v-tooltip top v-if="canDeleteEdge">
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn style=" margin-left: auto; margin-right: 0;" v-on="on"
+                                            @click="deleteTriple()" :disabled="!canDeleteEdge || !canUpdateEdge">
+                                            defer decision
+                                        </v-btn>
+                                    </template>
+                                    <span>
+                                        Let others decide whether these concept should be linked or not
+                                    </span>
+                                </v-tooltip>
+                            </div>
+                            <div v-else>
+                                <v-btn color="success" @click="smartLink()"
+                                    :disabled="!canNontrivalLinkEdge || !canUpdateEdge">
+                                    link
+                                </v-btn>
+                                <v-btn style=" margin-left: auto; margin-right: 0;" color="indigo lighten-2"
+                                    @click="smartUnlink()" :disabled="!canNontrivalRemoveEdge || !canUpdateEdge">
+                                    unlink
+                                </v-btn>
+                            </div>
+                        </v-row>
+                    </v-container>
+                </v-form>
+            </v-sheet>
+        </v-bottom-sheet>
+    </v-card>
+    <v-snackbar v-model="deleteSelectBar" timeout='10000'>
+        Deletion can not be undone, are you sure?
+        <template v-slot:action="{ attrs }">
+            <v-btn color="error" text v-bind="attrs" @click="workspaceDelete()">
+                delete
+            </v-btn>
+        </template>
+    </v-snackbar>
+    <v-container style="bottom: 5vh; right:5vh; position: fixed; width:19vw;">
+        <v-row no-gutters justify="end">
+            <v-col cols="auto" dense>
+                <v-switch style="margin-top:0px" @change="switchStyle()" :disabled="graphLoading" v-model="diffMode"
+                    messages="view diff" prepend-icon="rule" dense>
+                </v-switch>
+            </v-col>
+            <v-col cols="auto" dense>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-badge color="error" :value="(activeNegativeEdgeCount + inactiveNegativeEdgeCount)>0"
+                            :content="activeNegativeEdgeCount + inactiveNegativeEdgeCount">
+                            <v-icon v-bind="attrs" v-on="on">playlist_remove</v-icon>
+                        </v-badge>
+                    </template> ${activeNegativeEdgeCount + inactiveNegativeEdgeCount} edge negation
+                    ${activeNegativeEdgeCount + inactiveNegativeEdgeCount>1?"have":"has"}
+                    been declared. Turn 'view diff' mode on to
+                    visualize such
+                    explicit concept dissociation.
+                </v-tooltip>
+            </v-col>
+        </v-row>
+        <v-row v-if="diffMode">
+            <v-col cols="auto">
+                <v-menu>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-btn v-bind="attrs" v-on="on">
+                            filter bank
+                        </v-btn>
+                    </template>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[0,3];highlightEdge()">
+                        ${subject?.labels?.includes("Branch")?"branch":"trunk"}
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[1,2,4,5];highlightEdge()">
+                        workspace
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[0,1,2];highlightEdge()">
+                        proposal
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[3,4,5];highlightEdge()">
+                        negation
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[1,2];highlightEdge()">
+                        workspace proposal
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: normal;" block tile
+                        @click="edgeChip=[4,5];highlightEdge()">
+                        workspace negation
+                    </v-btn>
+                    <v-btn style="text-transform: none; font-weight: bold;" block tile
+                        @click="edgeChip=[1,4];highlightEdge()">
+                        active
+                    </v-btn>
+
+                    <v-tooltip top>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn v-bind="attrs" v-on="on"
+                                style="text-transform: none; font-weight: bold; -webkit-text-stroke: 0.75px black; color:white"
+                                block tile @click="edgeChip=[2,5];highlightEdge()">
+                                inactive
+                                <v-icon right>
+                                    help_outline
+                                </v-icon>
+                            </v-btn>
+                        </template>
+                        <span>Inactive edges are redundant data in the workspace that do not cause any changes to the
+                            final graph.</span>
+                    </v-tooltip>
+                </v-menu>
+            </v-col>
+            <v-col cols="auto" @click="edgeChip=[];highlightEdge()">
+                <v-btn>
+                    clear
+                </v-btn>
+            </v-col>
+        </v-row>
+        <v-chip-group v-model="edgeChip" v-if="diffMode" multiple column @change="highlightEdge()">
+            <v-chip filter label>
+                <v-avatar left>
+                    ${originalPositiveEdgeCount}
+                </v-avatar>
+                edge proposal in ${subject?.labels?.includes("Branch")?"branch":"trunk"}
+            </v-chip>
+            <v-chip filter label>
+                <v-avatar left>
+                    ${activePositiveEdgeCount}
+                </v-avatar>
+                <span style="font-weight: bold;">active proposal</span>
+            </v-chip>
+            <v-chip filter label>
+                <v-avatar left>
+                    ${inactivePositiveEdgeCount}
+                </v-avatar>
+                <span style="font-weight: bold; -webkit-text-stroke: 0.75px black; color:white">inactive edge
+                    proposal</span>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-icon v-bind="attrs" v-on="on" right>
+                            help_outline
+                        </v-icon>
+                    </template>An inactive edge proposal is created if you are trying to create an already
+                    existing
+                    edge
+                </v-tooltip>
+            </v-chip>
+            <v-chip filter label>
+                <v-avatar left>
+                    ${originalNegativeEdgeCount}
+                </v-avatar>
+                <div style="display: flex; height: 100%; align-items: center;  background-color: white;">
+                    <span>
+                        edge negation in ${subject?.labels?.includes("Branch")?"branch":"trunk"}
+                    </span>
+                </div>
+            </v-chip>
+            <v-chip filter label>
+                <v-avatar left>
+                    ${activeNegativeEdgeCount}
+                </v-avatar>
+                <div style="display: flex; height: 100%; align-items: center;  background-color: white;">
+                    <span style="font-weight: bold;">
+                        active negation
+                    </span>
+                </div>
+            </v-chip>
+            <v-chip filter label>
+                <v-avatar left>
+                    ${inactiveNegativeEdgeCount}
+                </v-avatar>
+                <div style="display: flex; height: 100%; align-items: center;  background-color: white;">
+                    <span style="font-weight: bold; -webkit-text-stroke: 0.75px black; color:white">inactive
+                        edge negation</span>
+                </div>
+                </div>
+                <v-tooltip top>
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-icon v-bind="attrs" v-on="on" right>
+                            help_outline
+                        </v-icon>
+                    </template>An inactive edge negation is created if you are trying to deny a nonexistent
+                    edge
+                </v-tooltip>
+            </v-chip>
+        </v-chip-group>
+    </v-container>
+    <v-dialog v-model="commitExposeDialogue">
+        <v-card>
+            <v-card-title class="text-h5 grey lighten-2">
+                Give a name tag to your new version:
+            </v-card-title>
+            <v-form ref="createWorkspaceControl">
+                <v-text-field label="tag" :rules="tagRules" v-model="tag" required></v-text-field>
+            </v-form>
+            <v-divider></v-divider>
+
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" text @click="commitExpose()">
+                    create
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-model="edgeStyleDialogue">
+        <v-container>
+            <v-row>
+                <v-col>
+                    Edge proposal
+                </v-col>
+                <v-col>
+
+                </v-col>
+            </v-row>
+            <v-row>
+                <v-col>
+
+                </v-col>
+                <v-col>
+
+                </v-col>
+            </v-row>
+        </v-container>
+    </v-dialog>
+    <v-dialog v-model="coursePlanDialogue" content-class="coursePlanPage" transition="slide-x-reverse-transition"
+        hide-overlay no-click-animation persistent :retain-focus="false" eager>
+        <v-card style="height: 100%; width:100%">
+            <v-btn block color="error" plain @click="coursePlanDialogue = false" small elevation="2">
+                dismiss
+                <v-icon right>
+                    close
+                </v-icon>
+            </v-btn>
+            <iframe style="height: 100%; width:100%" frameBorder="0"
+                :src="subject?.courseCode?'{{ url_for('instructor.coursePlan')}}' + subject.courseCode:''"></iframe>
+        </v-card>
+    </v-dialog>
+    <v-tooltip top>
+        <template v-slot:activator="{ on, attrs }">
+            <v-fab-transition>
+                <v-btn v-show="!isEntityEditorVisible" v-bind="attrs" v-on="on" @click="backToEntityEditor()" fixed
+                    bottom right fab>
+                    <v-icon>edit</v-icon>
+                </v-btn>
+            </v-fab-transition>
+        </template>
+        back to opened concept editor
+    </v-tooltip>
+</v-container>
+
+{% endblock %}
+{% block VueComponentScript %}
+{% import 'component/cyMetricsVisualize.html' as cyMetricsVisualize %}
+{% import 'component/cyOption.html' as cyOption %}
+{% import 'instructor/components/coauthorForm.html' as coauthorForm with context%}
+{{ layout.cytoscapeCDN() }}
+{{ layout.socketio() }}
+{{ cyMetricsVisualize.component()}}
+{{ cyMetricsVisualize.script()}}
+{{ cyOption.component()}}
+{{ cyOption.script()}}
+{{ coauthorForm.component()}}
+{{ coauthorForm.script()}}
+{% include "instructor/components/entityEditor.html" %}
+{% include "instructor/components/triplesImportForm.html" %}
+<style>
+    .v-chip--active {
+        background-color: lightblue;
+    }
+
+    .entityPage {
+        height: 50vh;
+        padding: unset;
+        right: 0px;
+        width: 30vw;
+        max-height: unset !important;
+        position: absolute;
+        margin: unset;
+        overflow-x: clip;
+    }
+
+    .coursePlanPage {
+        height: 70vh;
+        padding: unset;
+        left: 0px;
+        width: 40vw;
+        max-height: unset !important;
+        position: absolute;
+        margin: unset;
+        overflow: clip;
+    }
+</style>
+<script src="{{ url_for('static', filename='options/cytoscapeStyle.js') }}"></script>
+<script>
+    cy = cytoscape({
+        style: cyStyles.basicEditStyle,
+        wheelSensitivity: 0.15,
+        boxSelectionEnabled: false,
+    });
+    cyLayout = null
+    cytoscapeInstance = [{
+        cy: cy,
+        options: "basicEditStyle"
+    }]
+    concentricLayoutOptions = {
+        name: 'concentric',
+    }
+    fitPadding = document.documentElement.clientHeight * 0.05
+    colaLayoutOptions = {
+        name: 'cola',
+        maxSimulationTime: Infinity,
+        infinite: true,
+        fit: false,
+        edgeLength: 55,
+        nodeSpacing: 0
+    }
+    coseLayoutOptions = {
+        name: 'cose',
+        padding: fitPadding,
+        fit: true,
+        idealEdgeLength: function (edge) {
+            return 64;
+        },
+        gravity: 0.15,
+        animationDuration: 750
+    }
+
+    function nodeFactory(name) {
+        let output = {
+            group: 'nodes',
+            data: {
+                id: name,
+                name: name
+            },
+            position: {
+                x: 0,
+                y: 0
+            },
+        }
+        return output
+    }
+
+    function workspaceEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name, edge.r_name,
+                    edge.t_name),
+                workspace_value: edge.r_value ? 'true' : 'false',
+                subject_value: 'undefined',
+            }
+        }
+        return output
+    }
+    edgeCollections = {}
+
+    function subjectEdgeFactory(edge) {
+        let output = {
+            group: 'edges',
+            data: {
+                source: edge.h_name,
+                target: edge.t_name,
+                name: edge.r_name,
+                id: edgeIdFromNames(edge.h_name,
+                    edge.r_name, edge.t_name),
+                workspace_value: 'undefined',
+                subject_value: edge.r_value ? 'true' : 'false',
+            }
+        }
+        return output
+    }
+
+    function edgeIdFromNames(h_name, r_name, t_name) {
+        return h_name +
+            '.' + r_name + '.' + t_name
+    }
+    Vue.component('app-content', {
+        data: () => ({
+            editor_bc: null,
+            isEntityEditorVisible: true,
+            boundingBox: {
+                w: 0,
+                h: 0,
+                x1: 0,
+                y1: 0
+            },
+            commitExposeDialogue: false,
+            tag: '',
+            tagRules: [v => !!v || 'Tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            relationships: [],
+            nameRules: [v => !!v || 'Name is required',
+                v => (v && v.length > 1 && v.length) < 99 ||
+                'Name should be anything between 2 and 99 charactors',
+                v => (v && /{{regExpRules["name"]}}/.test(v)) ||
+                'Name can only contains alphanumeric characters and space.'
+            ],
+            h_name: '',
+            t_name: '',
+            r_name: '',
+            tripleBottomSheet: false,
+            canLinkEdge: false,
+            canUnlinkEdge: false,
+            canDeleteEdge: false,
+            canUpdateEdge: false,
+            focusing: '',
+            wasNewNode: [],
+            wasNewEdge: [],
+            concepts: [],
+            subject: {
+                isPatchLeaf: true
+            },
+            workspace: {
+                tag: '',
+            },
+            deleteSelectBar: false,
+            edgeChip: [],
+            originalPositiveEdgeCount: 0,
+            originalNegativeEdgeCount: 0,
+            activePositiveEdgeCount: 0,
+            activeNegativeEdgeCount: 0,
+            inactivePositiveEdgeCount: 0,
+            inactiveNegativeEdgeCount: 0,
+            diffMode: false,
+            canNontrivalLinkEdge: false,
+            canNontrivalRemoveEdge: false,
+            edgeStyleDialogue: false,
+            metricsBottomSheet: false,
+            graphLoading: true,
+            coursePlanDialogue: false,
+            isPhysicsRunning: false,
+            importDialogue: false,
+        }),
+        computed: {
+            fullScreenMode: {
+                get() {
+                    return !this.$root.appBar && !this.$root.navBar
+                },
+                set(value) {
+                    this.$root.appBar = !value
+                    this.$root.navBar = !value
+                }
+            }
+        },
+        methods: {
+            onGetWorkspaceData(body) {
+                if (body.workspace && body.triples && body.subject && body.subject_triples) {
+                    this.workspace = body.workspace
+                    body.subject.canPull = body.subject.canPull ? true : false
+                    this.subject = body.subject
+                    cy.elements().remove();
+                    cy.add(nodeFactory(body.subject.courseCode)).style({
+                        'background-image': body.workspace.imageURL,
+                        'background-fit': 'cover'
+                    })
+                    body.triples.forEach(triple => {
+                        [triple.h_name, triple.t_name].forEach(name => {
+                            if (cy.getElementById(name).length == 0) {
+                                cy.add(nodeFactory(name))
+                            }
+                        })
+                        cy.add(workspaceEdgeFactory(triple))
+                    })
+                    body.subject_triples.forEach(triple => {
+                        [triple.h_name, triple.t_name].forEach(name => {
+                            if (cy.getElementById(name).length == 0) {
+                                cy.add(nodeFactory(name))
+                            }
+                        })
+                        let edge = cy.getElementById(edgeIdFromNames(triple.h_name, triple
+                            .r_name, triple.t_name))
+                        if (edge.length > 0) {
+                            edge[0].data({
+                                subject_value: triple.r_value ? 'true' : 'false'
+                            })
+                        } else {
+                            cy.add(subjectEdgeFactory(triple))
+                        }
+                    })
+                    this.rootName = body.workspace.name
+                    // let cyDijkstra = cy.elements().dijkstra('node[id = "' + this
+                    //     .rootName +
+                    //     '"]')
+                    this.redoLayout()
+                    this.edgeStatistic()
+
+                } else {
+                    this.$root.errorDisplay(body,
+                        'Unexpected error on getting draft information.')
+                }
+            },
+            loadData() {
+                this.$root.progress.show = true
+                let workspacePromise = fetch(
+                        "{{ url_for('RESTful.workspace.get', deltaGraphId=deltaGraphId) }}", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        return body
+                    })
+                let relationshipPromise =
+                    fetch("{{ url_for('RESTful.relationship.query', approved=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.relationships) {
+                            this.relationships = body.relationships
+                            this.r_name = body.relationships.includes('Subtopic in') ? 'Subtopic in' : ''
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+                let entityPromise = fetch("{{ url_for('RESTful.entity.query', list=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.entities) {
+                            this.concepts = body.entities.map(e => e.concept.name)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+
+                        }
+                    })
+                return Promise.all([workspacePromise, relationshipPromise, entityPromise]).then(data => {
+                    this.$root.progress.show = false
+                    return data
+                })
+            },
+            switchStyle() {
+                cy.style().resetToDefault()
+                if (this.diffMode) {
+                    cy.style(cyStyles.diffEditStyle)
+                    cytoscapeInstance[0].options = "diffEditStyle"
+                } else {
+                    cy.edges(".suppress").removeClass('suppress')
+                    cy.style(cyStyles.basicEditStyle)
+                    cytoscapeInstance[0].options = "basicEditStyle"
+                }
+            },
+            physics(bool) {
+                this.isPhysicsRunning = bool
+                localStorage.setItem(this.workspace.deltaGraphId + "_isPhysicsRunning", this.isPhysicsRunning)
+                if (bool) {
+                    cyLayout = cy.layout(colaLayoutOptions)
+                    cyLayout.run()
+                } else if (cyLayout) {
+                    cyLayout.stop()
+                }
+            },
+            edgeStatistic() {
+                edgeCollections.originalPositiveEdge = cy.edges('[subject_value = "true"]')
+                edgeCollections.originalNegativeEdge = cy.edges('[subject_value = "false"]')
+                edgeCollections.activePositiveEdge = cy.edges(
+                    '[workspace_value = "true"][subject_value != "true"]')
+                edgeCollections.activeNegativeEdge = cy.edges(
+                    '[workspace_value = "false"][subject_value = "true"]')
+                edgeCollections.inactivePositiveEdge = cy.edges(
+                    '[workspace_value = "true"][subject_value = "true"]')
+                edgeCollections.inactiveNegativeEdge = cy.edges(
+                    '[workspace_value = "false"][subject_value != "true"]')
+                this.originalPositiveEdgeCount = edgeCollections.originalPositiveEdge.length
+                this.originalNegativeEdgeCount = edgeCollections.originalNegativeEdge.length
+                this.activePositiveEdgeCount = edgeCollections.activePositiveEdge.length
+                this.activeNegativeEdgeCount = edgeCollections.activeNegativeEdge.length
+                this.inactivePositiveEdgeCount = edgeCollections.inactivePositiveEdge.length
+                this.inactiveNegativeEdgeCount = edgeCollections.inactiveNegativeEdge.length
+            },
+            createTriple(r_value) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                if (this.$refs.tripleForm.validate()) {
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.triple.put', deltaGraphId=deltaGraphId) }}", {
+                            method: 'PUT',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                h_name: this.h_name,
+                                r_name: this.r_name,
+                                t_name: this.t_name,
+                                r_value: r_value,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.editor_bc.postMessage({
+                                message: 'graphEditor-createWorkspaceTriple',
+                                payload: {
+                                    ...body.triple,
+                                    deltaGraphId: this.workspace.deltaGraphId
+                                }
+                            }, '*')
+                            if (body.triple) {
+                                this.createWorkspaceTriple(body.triple)
+                                this.broadcastCreateWorkspaceTriple(body.triple)
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error when creating triple.')
+                            }
+                        })
+                }
+            },
+            deleteTriple() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                if (this.$refs.tripleForm.validate()) {
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.triple.delete', deltaGraphId=deltaGraphId) }}", {
+                            method: 'DELETE',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                h_name: this.h_name,
+                                r_name: this.r_name,
+                                t_name: this.t_name,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            if (body.triple) {
+                                this.editor_bc.postMessage({
+                                    message: 'graphEditor-deleteWorkspaceTriple',
+                                    payload: {
+                                        ...body.triple,
+                                        deltaGraphId: this.workspace.deltaGraphId
+                                    }
+                                }, '*')
+                                this.broadcastDeleteWorkspaceTriple(body.triple)
+                                this.deleteWorkspaceTriple(body.triple)
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error when deleted triple.')
+                            }
+                        })
+                }
+            },
+            createWorkspaceTriple(triple) {
+                let newNodes = cy.collection();
+                let oldNodes = cy.collection();
+                [triple.h_name, triple.t_name].forEach(
+                    name => {
+                        let eles = cy.getElementById(name)
+                        if (eles.length == 0) {
+                            newNodes = newNodes.union(cy.add(nodeFactory(name)))
+                        } else {
+                            oldNodes = oldNodes.union(eles)
+                        }
+                        if (!this.concepts.includes(name)) this.concepts.push(name)
+                    })
+                let edge = cy.getElementById(edgeIdFromNames(triple.h_name, triple.r_name,
+                    triple.t_name))[0]
+
+                if (edge) {
+                    edge.data({
+                        workspace_value: triple.r_value ? 'true' : 'false'
+                    })
+                } else {
+                    cy.add(workspaceEdgeFactory(triple))
+                }
+                cy.nodes('.tempory[[degree > 0]]').removeClass("tempory")
+                // let cyDijkstra = cy.elements().dijkstra('node[id = "' + this
+                //     .rootName +
+                //     '"]')
+                if (newNodes.length != 0 && oldNodes.length != 0) {
+                    newNodes.forEach(node => {
+                        node.position({
+                            x: oldNodes[0].position().x,
+                            y: oldNodes[0].position().y
+                        })
+                    })
+                }
+                if (!this.isPhysicsRunning) {
+                    cy.nodes().lock()
+                    newNodes.unlock()
+                    let initOption = {
+                        ...colaLayoutOptions
+                    }
+                    initOption.maxSimulationTime = 2000
+                    initOption.infinite = false
+                    initOption.refresh = 1000
+                    initOption.convergenceThreshold = 0
+                    cyLayout = cy.layout(initOption)
+                    cyLayout.one('layoutstop', () => {
+                        cy.nodes().unlock()
+                    })
+                    cyLayout.run()
+                } else {
+                    this.physics(this.isPhysicsRunning)
+                }
+                this.edgeStatistic()
+                this.determineTripleOptions()
+            },
+            broadcastCreateWorkspaceTriple(triple) {
+                if (triple.r_value) {
+                    if (this.workspace.isExposed) this.editor_bc.postMessage({
+                        message: 'graphEditor-createTriple',
+                        payload: triple
+                    }, '*')
+                    this.graphEditorSocket.emit('createWorkspaceTriple', {
+                        workspace: this.workspace,
+                        payload: triple
+                    })
+                } else {
+                    if (this.workspace.isExposed) this.editor_bc.postMessage({
+                        message: 'graphEditor-deleteTriple',
+                        payload: triple
+                    }, '*')
+                    this.graphEditorSocket.emit('deleteWorkspaceTriple', {
+                        workspace: this.workspace,
+                        payload: triple
+                    })
+                }
+
+            },
+            deleteWorkspaceTriple(triple) {
+                let id = edgeIdFromNames(triple.h_name, triple.r_name, triple.t_name)
+                let edge = cy.getElementById(edgeIdFromNames(triple.h_name, triple.r_name,
+                    triple.t_name))[0]
+                edge.data({
+                    workspace_value: "undefined"
+                })
+                cy.edges('[workspace_value = "undefined"][subject_value = "undefined"]')
+                    .remove()
+                cy.nodes('[[degree = 0]][id != "' + this.rootName + '"]').addClass(
+                    "tempory")
+                this.edgeStatistic()
+                this.determineTripleOptions()
+                this.physics(this.isPhysicsRunning)
+            },
+            broadcastDeleteWorkspaceTriple(triple) {
+                let edge = cy.getElementById(edgeIdFromNames(triple.h_name, triple.r_name,
+                    triple.t_name))[0]
+                if (edge.data("subject_value") ==
+                    "true") {
+                    if (this.workspace.isExposed) this.editor_bc.postMessage({
+                        message: 'graphEditor-createTriple',
+                        payload: triple
+                    }, '*')
+                    this.graphEditorSocket.emit('createWorkspaceTriple', {
+                        workspace: this.workspace,
+                        payload: triple
+                    })
+                } else {
+                    if (this.workspace.isExposed) this.editor_bc.postMessage({
+                        message: 'graphEditor-deleteTriple',
+                        payload: triple
+                    }, '*')
+                    this.graphEditorSocket.emit('deleteWorkspaceTriple', {
+                        workspace: this.workspace,
+                        payload: triple
+                    })
+                }
+            },
+            highlightEdge() {
+                cy.edges(".suppress").removeClass('suppress')
+                if (this.edgeChip.length != 0) {
+                    let selectedEdge = cy.collection()
+                    this.edgeChip.forEach(index => {
+                        selectedEdge = selectedEdge.union(
+                            [
+                                edgeCollections.originalPositiveEdge,
+                                edgeCollections.activePositiveEdge,
+                                edgeCollections.inactivePositiveEdge,
+                                edgeCollections.originalNegativeEdge,
+                                edgeCollections.activeNegativeEdge,
+                                edgeCollections.inactiveNegativeEdge,
+                            ][index]
+                        )
+                    })
+                    cy.edges().difference(selectedEdge).addClass('suppress')
+                }
+            },
+            smartLink() {
+                if (this.h_name && this.h_name != '' && this.r_name && this.r_name != '' &&
+                    this.t_name && this.t_name != '') {
+                    let edge = cy.getElementById(edgeIdFromNames(this.h_name, this.r_name, this.t_name))
+                    console.log(edge.data())
+                    if (edge) {
+                        if (edge.data("workspace_value") != "true" && edge.data("subject_value") !=
+                            "true") {
+                            this.createTriple(true)
+                        } else if (edge.data("workspace_value") != "undefined" && edge.data("subject_value") ==
+                            "true") {
+                            this.deleteTriple(true)
+                        }
+                    } else {
+                        this.createTriple(true)
+                    }
+                } else {}
+            },
+            smartUnlink() {
+                if (this.h_name && this.h_name != '' && this.r_name && this.r_name != '' &&
+                    this.t_name && this.t_name != '') {
+                    let edge = cy.getElementById(edgeIdFromNames(this.h_name, this.r_name, this.t_name))
+                    console.log(edge.data())
+                    if (edge) {
+                        if (edge.data("workspace_value") != "false" && edge.data("subject_value") ==
+                            "true") {
+                            this.createTriple(false)
+                        } else if (edge.data("workspace_value") != "undefined" && edge.data("subject_value") !=
+                            "true") {
+                            this.deleteTriple(false)
+                        }
+                    }
+                } else {}
+
+            },
+            disableButtons() {
+                this.canUpdateEdge = false
+                this.canDeleteEdge = false
+            },
+            removeUnreachable() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.triple.delete', deltaGraphId=deltaGraphId) }}", {
+                        method: 'DELETE',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            unreachable: true,
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.triples) {
+                            this.unselectAll()
+                            body.triples.forEach(triple => {
+                                let id = edgeIdFromNames(triple.h_name, triple.r_name,
+                                    triple
+                                    .t_name)
+                                let edge = cy.getElementById(edgeIdFromNames(triple.h_name,
+                                    triple
+                                    .r_name,
+                                    triple.t_name))[0]
+                                if (edge) {
+                                    if (triple.r_value === null)
+                                        edge.data({
+                                            workspace_value: "undefined"
+                                        })
+                                    else if (triple.r_value === false)
+                                        edge.data({
+                                            workspace_value: "false"
+                                        })
+                                } else {
+                                    if (triple.r_value === false)
+                                        cy.add(workspaceEdgeFactory(triple))
+                                }
+                            })
+                            cy.edges(
+                                '[workspace_value = "undefined"][subject_value = "undefined"]'
+                            ).remove()
+                            cy.nodes('[[degree = 0]][id != "' + this.rootName + '"]')
+                                .remove()
+                            this.edgeStatistic()
+                            this.determineTripleOptions()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error when deleted unreachable triple.')
+                        }
+                    })
+
+            },
+            unselectAll() {
+                this.tripleBottomSheet = false
+                this.clearForm()
+                cy.nodes().unselect()
+                cy.edges().unselect()
+            },
+            clearForm() {
+                this.h_name = ''
+                this.t_name = ''
+                if (this.$refs.tripleForm)
+                    this.$refs.tripleForm.resetValidation()
+            },
+            nodeFieldFocus(event) {
+                this.focusing = event
+                if (event == "head") {
+                    cy.nodes().unselect()
+                    cy.edges().unselect()
+                    cy.nodes('[id = "' + this.h_name + '"]').select()
+                } else {
+                    cy.nodes().unselect()
+                    cy.edges().unselect()
+                    cy.nodes('[id = "' + this.t_name + '"]').select()
+                }
+            },
+            nodeFieldChange(event) {
+                cy.nodes().unselect()
+                cy.edges().unselect()
+                cy.nodes('[id = "' + event + '"]').select()
+                this.determineTripleOptions()
+            },
+            edgeFieldChange(event) {
+                this.determineTripleOptions()
+            },
+            determineTripleOptions() {
+                if (this.h_name && this.h_name != '' && this.r_name && this.r_name != '' &&
+                    this.t_name && this.t_name != '') {
+                    this.canUpdateEdge = true
+                    let edge = cy.getElementById(edgeIdFromNames(this.h_name, this.r_name, this.t_name))
+                    if (edge.length > 0) {
+                        cy.nodes().unselect()
+                        cy.edges().unselect()
+                        edge.select()
+                        this.canNontrivalLinkEdge = (edge.data("workspace_value") != "true" && edge
+                                .data(
+                                    "subject_value") != "true") || edge.data("workspace_value") ==
+                            "false"
+                        this.canNontrivalRemoveEdge = edge.data("workspace_value") == "true" || (edge
+                            .data(
+                                "subject_value") == "true" && edge.data("workspace_value") ==
+                            "undefined")
+                        this.canLinkEdge = edge.data("workspace_value") != "true"
+                        this.canUnlinkEdge = edge.data("workspace_value") != "false"
+                        this.canDeleteEdge = edge.data("workspace_value") != "undefined"
+                    } else {
+                        this.canNontrivalLinkEdge = true
+                        this.canNontrivalRemoveEdge = false
+                        this.canLinkEdge = true
+                        this.canUnlinkEdge = true
+                        this.canDeleteEdge = false
+                    }
+
+                } else {
+                    this.canUpdateEdge = false
+                }
+            },
+            editorFit() {
+                var maxZoom = cy.maxZoom();
+                cy.maxZoom(4);
+                cy.fit(cy, fitPadding)
+                cy.maxZoom(maxZoom);
+
+            },
+            saveLayout() {
+                let layout = []
+                cy.nodes().forEach(node => {
+                    layout.push({
+                        name: node.id(),
+                        x: node.position().x,
+                        y: node.position().y
+                    })
+                })
+                layout = JSON.stringify(layout)
+                localStorage.setItem(this.workspace.deltaGraphId + "_layout", layout)
+            },
+            redoLayout(useLocalStorage = true) {
+                this.graphLoading = true
+                let storedLayout = useLocalStorage ? localStorage.getItem(this.workspace.deltaGraphId +
+                    "_layout") : null
+                if (storedLayout) {
+                    storedLayout = JSON.parse(storedLayout)
+                    storedLayout.forEach(node => {
+                        cy.getElementById(node.name).position({
+                            x: node.x,
+                            y: node.y
+                        })
+                    })
+                    setTimeout(() => {
+                        this.graphLoading = false
+                        this.editorFit()
+                    }, 0.00001)
+                    this.physics(this.isPhysicsRunning)
+                } else {
+                    let initOption = {
+                        ...colaLayoutOptions
+                    }
+                    initOption.maxSimulationTime = 5000
+                    initOption.infinite = false
+                    initOption.refresh = 1000
+                    initOption.edgeLength = initOption.edgeLength * 2
+                    initOption.animate = false
+                    cyLayout = cy.layout(initOption)
+                    cyLayout.one('layoutstop', () => {
+                        let initOption = {
+                            ...colaLayoutOptions
+                        }
+                        initOption.maxSimulationTime = 2000
+                        initOption.infinite = false
+                        initOption.refresh = 1000
+                        initOption.animate = false
+                        cyLayout = cy.layout(initOption)
+                        cyLayout.one('layoutstop', () => {
+                            this.saveLayout()
+                            setTimeout(() => {
+                                this.graphLoading = false
+                                this.editorFit()
+                            }, 0.00001)
+                            this.physics(this.isPhysicsRunning)
+                        })
+                        cyLayout.run()
+                    })
+                    cyLayout.run()
+                }
+
+            },
+            showCommitExposeDialogue() {
+                this.commitExposeDialogue = true
+            },
+            toggleExposure(graph) {
+                this.$root.actionDisplay("You are " + (graph.isExposed ? "hiding" : "publishing") +
+                    " workspace " + graph.tag, "sure", () => {
+                        if (this.$root.progress.show == true) {
+                            this.$root.bePatientSnackBar.show = true
+                            return
+                        }
+                        this.$root.progress.show = true
+                        fetch("{{ url_for('RESTful.graph.patch') }}" + graph.deltaGraphId, {
+                                method: 'PATCH',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    isExposed: !graph.isExposed,
+                                })
+                            })
+                            .then(response => {
+                                return response.json()
+                            })
+                            .then(body => {
+                                this.$root.progress.show = false
+                                this.$root.responseSnackBar(body,
+                                    'update failed for unknown reason.',
+                                    () => {
+                                        this.$root.snackBars.actionSnackBar.show = false
+                                        graph.isExposed = !graph.isExposed
+                                        this.editor_bc.postMessage({
+                                            message: 'graphEditor-exposureToggle',
+                                            payload: {
+                                                ...this.workspace,
+                                                labels: ["Workspace"]
+                                            }
+                                        }, '*')
+                                        this.graphEditorSocket.emit('exposureToggle', {
+                                            workspace: this.workspace,
+                                            payload: {
+                                                ...this.workspace,
+                                                labels: ["Workspace"]
+                                            }
+                                        })
+                                    })
+                            })
+                    })
+            },
+            toggleCanPull() {
+                this.$root.actionDisplay("You are " + (this.subject.canPull ? "unsubmitting" : "submitting") +
+                    " patch " + this.subject.tag, "sure", () => {
+                        if (this.$root.progress.show == true) {
+                            this.$root.bePatientSnackBar.show = true
+                            return
+                        }
+                        this.$root.progress.show = true
+                        fetch("{{ url_for('RESTful.branch.patch') }}" + this.subject.deltaGraphId, {
+                                method: 'PATCH',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    canPull: !this.subject.canPull
+                                })
+                            })
+                            .then(response => {
+                                return response.json()
+                            })
+                            .then(body => {
+                                this.$root.progress.show = false
+                                this.$root.responseSnackBar(body,
+                                    'update failed for unknown reason.',
+                                    () => {
+                                        this.$root.snackBars.actionSnackBar.show = false
+                                        this.subject.canPull = !this.subject.canPull
+                                    })
+                            })
+                    })
+            },
+            commitExpose() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.branch.post', overwriterId=deltaGraphId) }}", {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            tag: this.tag,
+                            action: this.subject.isPatchLeaf && this.subject.isOwner && this.subject
+                                .labels.includes("Branch") ? "patch" : "fork",
+                            expose: true
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Sync failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            sync() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.workspace.patch', deltaGraphId=deltaGraphId) }}", {
+                        method: 'PATCH',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sync: true
+                        })
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Sync failed for unknown reason.',
+                            () => {
+                                this.loadData()
+                            })
+                    })
+            },
+            toggleJoin() {
+                this.$root.actionDisplay("You are " + (this.subject.isTeaching ? "quiting" : "joining") + " " +
+                    this.subject.courseCode, "sure", () => {
+                        if (this.$root.progress.show == true) {
+                            this.$root.bePatientSnackBar.show = true
+                            return
+                        }
+                        this.$root.progress.show = true
+                        fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(this.subject
+                                .courseCode), {
+                                method: 'PATCH',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    join: !this.subject.isTeaching
+                                })
+                            })
+                            .then(response => {
+                                try {
+                                    return response.json()
+                                } catch {
+                                    this.$root.progress.show = false
+                                    this.$root.errorDisplay({},
+                                        'Unexpected error occured.')
+                                }
+                            })
+                            .then(body => {
+                                this.$root.progress.show = false
+                                this.$root.responseSnackBar(body,
+                                    'update failed for unknown reason.',
+                                    () => {
+                                        this.$root.snackBars.actionSnackBar.show = false
+                                        this.subject.isTeaching = !this.subject.isTeaching
+                                        this.graphEditorSocket.emit(
+                                            'joinToggle', {
+                                                workspace: this.workspace,
+                                                payload: {
+                                                    userId: this.workspace.owner.userId,
+                                                    courseCode: this.subject.courseCode,
+                                                    isTeaching: this.subject.isTeaching
+                                                }
+                                            }
+                                        )
+                                    })
+
+                            })
+                    })
+            },
+            workspaceDelete() {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.workspace.delete', deltaGraphId=deltaGraphId) }}", {
+                        method: 'DELETE',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'delete failed for unknown reason.',
+                            () => {
+                                window.location.replace(
+                                    "{{ url_for('instructor.repositories') }}/" +
+                                    this.subject.courseCode)
+                            })
+                    })
+
+            },
+            changeWorkspaceTag() {
+                fetch("{{ url_for('RESTful.workspace.patch', deltaGraphId=deltaGraphId) }}", {
+                    method: 'PATCH',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        tag: this.workspace.tag
+                    })
+                })
+            },
+            tutorial() {
+                let node = cy.nodes()[0]
+                this.boundingBox = node.renderedBoundingBox()
+                this._tour = this.$shepherd({
+                    useModalOverlay: true,
+                    defaultStepOptions: {
+                        classes: 'shadow-md bg-purple-dark',
+                        scrollTo: true,
+                        cancelIcon: {
+                            enabled: true
+                        },
+                        canClickTarget: false,
+                        buttons: [{
+                            text: 'Next',
+                            action: () => this._tour.next()
+                        }],
+                    }
+                })
+                if (this.$refs["shepherd-openTripleFormBtn"] && this.tripleBottomSheet == false) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["shepherd-openTripleFormBtn"].$el,
+                            on: 'top'
+                        },
+                        text: 'Step 1:  Click to manipulate triples',
+                    })
+                }
+                if (this.$refs["shepherd-openTripleFormField"]) {
+                    let text = this.tripleBottomSheet == true ? 'Triple form is already opened<br>' : ''
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["shepherd-openTripleFormField"],
+                            on: 'top'
+                        },
+                        text: text + 'Step 2:  Choose corresponding head and tail entity',
+                        beforeShowPromise: () =>
+                            new Promise((resolve, reject) => {
+                                this.$refs["shepherd-openTripleFormBtn"].$el.dispatchEvent(
+                                    new MouseEvent("click"))
+                                setTimeout(() => {
+                                    resolve();
+                                }, 200);
+                            }),
+                    })
+                }
+                if (this.$refs["shepherd-openTripleFormLinkBtn"]) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["shepherd-openTripleFormLinkBtn"],
+                            on: 'top'
+                        },
+                        text: 'Step 3: Link to form a triple, Unlink to break a triple',
+                    })
+                }
+                if (this.$refs["shepherd-graphNode"]) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["shepherd-graphNode"],
+                            on: 'bottom'
+                        },
+                        text: 'For editing concept information<br>Step 1: Click the corresponding node',
+                    })
+                }
+                console.log(this.$refs["entityForm"].$refs)
+                if (this.$refs["entityForm"].$refs["activityControl"]) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["entityForm"].$refs["activityControl"].$el,
+                            on: 'bottom'
+                        },
+                        text: 'Step 2: Click to change arrangements',
+                        beforeShowPromise: () =>
+                            new Promise((resolve, reject) => {
+                                node.emit('tap')
+                                setTimeout(() => {
+                                    resolve();
+                                }, 100);
+                            }),
+                    })
+                }
+                if (this.$refs["entityForm"].$refs["shepherd-materialFormOpenBtn"]) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["entityForm"].$refs["shepherd-materialFormOpenBtn"].$el,
+                            on: 'bottom'
+                        },
+                        text: 'Step 3: Click to add materals\' link',
+                    })
+                }
+                if (this.$refs["shepherd-coursePlan"]) {
+                    this._tour.addStep({
+                        attachTo: {
+                            element: this.$refs["shepherd-coursePlan"].$el,
+                            on: 'bottom'
+                        },
+                        text: 'Click to open the course plan',
+                    })
+                }
+
+
+                this._tour.start();
+            },
+            openEntityEditor(name) {
+                this.editor_bc.postMessage({
+                    message: "entityEditor-close"
+                }, '*')
+                let width = 0.35 * document.documentElement.clientWidth
+                let left = (1 - 0.35) * document.documentElement.clientWidth
+                window.open(name ? "{{url_for('instructor.entityEditor')}}/" +
+                    this.subject.courseCode + '/' + name : "",
+                    "",
+                    "popup=true,resizable=no, width=" + width + ",left=" + left).focus()
+            },
+            backToEntityEditor() {
+                this.editor_bc.addEventListener('message', (e) => {
+                    const {
+                        message,
+                        payload
+                    } = e.data
+                    if (message == "entityEditor-focusEcho") {
+                        this.openEntityEditor(payload)
+                    }
+                }, {
+                    once: true
+                })
+                this.editor_bc.postMessage({
+                    message: 'entityEditor-focus'
+                })
+            },
+            updateTriples(triples) {
+                this.$root.progress.show = true
+                let body = {
+                    triples: JSON.stringify(triples),
+                }
+                fetch('{{ url_for("RESTful.workspace.patch", deltaGraphId=deltaGraphId)}}', {
+                        method: 'PATCH',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.triples) {
+                            body.triples.forEach(triple => {
+                                if (triple.r_value) {
+                                    this.createWorkspaceTriple(triple)
+                                    this.broadcastCreateWorkspaceTriple(triple)
+
+                                } else {
+                                    this.broadcastDeleteWorkspaceTriple(triple)
+                                    this.deleteWorkspaceTriple(triple)
+                                }
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error when importing triples.')
+                        }
+                    })
+            }
+        },
+        mounted: function () {
+            window.onmessage = (e) => {
+                const {
+                    message,
+                    payload
+                } = e.data
+                if (message == "coursePlan-mount") {
+                    e.source.postMessage({
+                        message: 'graphEditor-workspace',
+                        payload: this.workspace
+                    }, '*')
+                }
+            }
+            this.fullScreenMode = true
+            cy.mount(document.getElementById("editor"))
+            cytoscapeInstance.forEach(instance => {
+                instance.cy.container().style.background = cyStyles[instance.options].filter(
+                    sheet => sheet.selector == 'background-color')[0].style["background-color"]
+            })
+            self = this
+            let loadDataPromise = this.loadData().then(data => {
+                this.onGetWorkspaceData(data[0]) // not using socketio to get data
+                this.graphEditorSocket = {
+                    emit: function () {}
+                }
+                // url = 'ws://' + '{{CONFIG.HOSTING_ADDRESS}}'.split('https://')[1]
+                // console.log(url)
+                // this.graphEditorSocket = io(url + '/graphEditor');
+                // this.graphEditorSocket.on('connect', () => {
+                //     this.graphEditorSocket.emit('start', '{{deltaGraphId}}')
+                // })
+                // this.graphEditorSocket.on("workspaceData", (response) => {
+                //     if (response.success) {
+                //         this.onGetWorkspaceData(response)
+                //     } else {
+                //         this.$root.errorDisplay(response,
+                //             'You had no permission for this workspace.')
+                //     }
+                // })
+                // this.graphEditorSocket.on("exposureToggle", (payload) => {
+                //     if (payload.deltaGraphId == this.workspace
+                //         .deltaGraphId) {
+                //         this.workspace = payload
+                //     }
+                //     if (payload.isExposed && payload.deltaGraphId != this
+                //         .workspace
+                //         .deltaGraphId && this.workspace.course.name ==
+                //         payload.course.name) {
+                //         this.workspace.isExposed = false
+                //     }
+                // })
+                // this.graphEditorSocket.on('createWorkspaceTriple', (payload) => {
+                //     this.createWorkspaceTriple(payload)
+                // });
+                // this.graphEditorSocket.on('deleteWorkspaceTriple', (payload) => {
+                //     this.deleteWorkspaceTriple(payload)
+                // });
+                // this.graphEditorSocket.on("joinToggle", (payload) => {
+                //     console.log("joinToggle", payload, this.workspace, this.subject)
+                //     if (payload.userId == this.workspace.owner.userId && this.subject
+                //         .courseCode == payload.courseCode)
+                //         this.subject.isTeaching = payload.isTeaching
+                // });
+                this.editor_bc = new BroadcastChannel(
+                        "{{courseCode}}-{{request.blueprint}}-editor"),
+                    this.editor_bc.onmessage = (e) => {
+                        const {
+                            message,
+                            payload,
+                            workspaceDeltagraphId
+                        } = e.data
+                        console.log(e.data)
+                        if (message == "coursePlan-exclusiveHeadTriple") {
+                            if (this.workspace.deltaGraphId != workspaceDeltagraphId) return
+                            let triple = payload
+                            let newNodes = cy.collection();
+                            let oldNodes = cy.collection();
+                            let removed_edge = cy.edges('[workspace_value = "true"]').filter(edge =>
+                                edge.source().data('id') == triple.h_name)
+                            removed_edge.data({
+                                workspace_value: "undefined"
+                            })
+                            let false_edge = cy.edges(
+                                    '[workspace_value = "undefined"][subject_value = "true"]')
+                                .filter(edge => edge.source().data('id') == triple.h_name)
+                            false_edge.data({
+                                workspace_value: "false"
+                            })
+                            cy.edges('[workspace_value = "undefined"][subject_value = "undefined"]')
+                                .remove()
+                            cy.nodes('[[degree = 0]][id != "' + this.rootName + '"]').addClass(
+                                "tempory");
+                            [triple.h_name, triple.t_name].forEach(
+                                name => {
+                                    let eles = cy.getElementById(name)
+                                    if (eles.length == 0) {
+                                        newNodes = newNodes.union(cy.add(nodeFactory(name)))
+                                    } else {
+                                        oldNodes = oldNodes.union(eles)
+                                    }
+                                    if (!this.concepts.includes(name)) this.concepts.push(name)
+                                })
+                            let edge = cy.getElementById(edgeIdFromNames(triple.h_name, triple
+                                .r_name,
+                                triple.t_name))[0]
+
+                            if (edge) {
+                                edge.data({
+                                    workspace_value: triple.r_value ? 'true' : 'false'
+                                })
+                            } else {
+                                cy.add(workspaceEdgeFactory(triple))
+                            }
+                            cy.nodes('.tempory[[degree > 0]]').removeClass("tempory")
+                            if (newNodes.length != 0 && oldNodes.length != 0) {
+                                newNodes.forEach(node => {
+                                    node.position({
+                                        x: oldNodes[0].position().x,
+                                        y: oldNodes[0].position().y
+                                    })
+                                })
+                            }
+
+                            if (!this.isPhysicsRunning) {
+                                cy.nodes().lock()
+                                newNodes.unlock()
+                                let initOption = {
+                                    ...colaLayoutOptions
+                                }
+                                initOption.maxSimulationTime = 2000
+                                initOption.infinite = false
+                                initOption.refresh = 1000
+                                initOption.convergenceThreshold = 0
+                                cyLayout = cy.layout(initOption)
+                                cyLayout.one('layoutstop', () => {
+                                    cy.nodes().unlock()
+                                })
+                                cyLayout.run()
+                            } else {
+                                this.physics(this.isPhysicsRunning)
+                            }
+                            this.edgeStatistic()
+                            this.determineTripleOptions()
+
+                        } else if (message == "coursePlan-decapitate") {
+                            if (this.workspace.deltaGraphId != workspaceDeltagraphId) return
+                            let triples = payload
+                            triples.forEach(triple => {
+                                if (triple.r_value === true) {
+                                    return
+                                }
+                                let edge = cy.getElementById(edgeIdFromNames(triple.h_name,
+                                    triple.r_name,
+                                    triple.t_name))[0]
+                                if (edge) {
+                                    edge.data({
+                                        workspace_value: triple.r_value === false ?
+                                            'false' : 'undefined'
+                                    })
+                                } else {
+                                    cy.add(workspaceEdgeFactory(triple))
+                                }
+
+                            })
+                            cy.edges('[workspace_value = "undefined"][subject_value = "undefined"]')
+                                .remove()
+                            cy.nodes('[[degree = 0]][id != "' + this.rootName + '"]').addClass(
+                                "tempory")
+                            this.edgeStatistic()
+                            this.determineTripleOptions()
+                        } else if (message == "entityEditor-visibility") {
+                            this.isEntityEditorVisible = payload
+                        }
+                        /*
+                        else if (message == "graphEditor-createWorkspaceTriple") {
+                            if (payload.deltaGraphId != this.workspace.deltaGraphId && message
+                                .includes('graphEditor')) return
+                            this.createWorkspaceTriple(payload)
+                        } else if (message == "graphEditor-deleteWorkspaceTriple") {
+                            if (payload.deltaGraphId != this.workspace.deltaGraphId && message
+                                .includes('graphEditor')) return
+                            this.deleteWorkspaceTriple(payload)
+                        } else if (message == "graphEditor-joinToggle") {
+                            this.subject.isTeaching = payload
+                        } else if (message == "graphEditor-exposureToggle" || message ==
+                            "coursePlan-exposureToggle") {
+                            if (payload.deltaGraphId == this.workspace.deltaGraphId) {
+                                this.workspace = payload
+                            }
+                            if (payload.isExposed && payload.deltaGraphId != this.workspace
+                                .deltaGraphId) {
+                                this.workspace.isExposed = false
+                            }
+                        }
+                        */
+                    }
+                this.editor_bc.postMessage({
+                    message: 'entityEditor-isVisible'
+                }, '*')
+            })
+            cy.on('tap', 'node', (event) => {
+                this.openEntityEditor(event.target.data("id"))
+                if (self.canUpdateEdge) {
+                    self.clearForm()
+                }
+                if (!self.h_name || this.focusing == "head") {
+                    self.h_name = event.target.data("id")
+                } else {
+                    self.t_name = event.target.data("id")
+                }
+                self.disableButtons()
+                self.determineTripleOptions()
+                self.tripleBottomSheet = true;
+            })
+            cy.on('tap', 'edge', (event) => {
+                self.tripleBottomSheet = true;
+                self.h_name = event.target.source().data("id")
+                self.r_name = event.target.data("name")
+                self.t_name = event.target.target().data("id")
+                self.determineTripleOptions()
+            })
+            cy.on('tapdrag', 'node', (event) => {})
+            cy.on('dragfreeon', 'node', (event) => {
+                this.saveLayout()
+            })
+            let isPhysicsRunning = localStorage.getItem("{{deltaGraphId}}_isPhysicsRunning")
+            if (isPhysicsRunning != null)
+                this.isPhysicsRunning = isPhysicsRunning === 'true'
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

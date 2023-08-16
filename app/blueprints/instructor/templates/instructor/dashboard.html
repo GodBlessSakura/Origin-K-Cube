@@ -1,0 +1,6 @@
+{% extends "shared/dashboard.html" %}
+{% block widget %}
+{% for file_name in components%}
+    {% include file_name %}
+{% endfor %}
+{% endblock %}

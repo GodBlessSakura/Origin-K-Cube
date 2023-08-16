@@ -1,0 +1,169 @@
+{% set widgetComponentName = 'kcube-' + request.blueprint + '-DBStatistic' %}
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;">
+    <div ref="nodecanvas" style="height: 50%; width: 100%;"></div>
+    <div ref="edgecanvas" style="height: 50%; width: 100%;"></div>
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="{{widgetComponentName}}">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    (() => {
+        widgetName = 'DB Statistic'
+        widgetComponentName = '{{widgetComponentName}}'
+        KCube.widgetName.push(widgetName)
+        KCube.widgetOptions[widgetName] = {
+            widgetName: widgetName,
+            component: widgetComponentName,
+            minH: 2,
+            minW: 1,
+            h: 3,
+            w: 1,
+            maxH: 3,
+        }
+    })();
+    Vue.component(widgetComponentName, {
+        data: () => ({}),
+        methods: {
+            loadData() {
+                fetch("{{ url_for('admin.getDBStatistic') }}", {
+                        method: "GET",
+                        ...dashboardOption.fetchOption
+                    }).then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.node && body.edge) {
+                            let element = this.$refs.nodecanvas
+                            this.nodeChart = echarts.init(element);
+                            let option = {
+                                tooltip: {
+                                    trigger: 'item'
+                                },
+                                legend: {
+                                    type: 'scroll',
+                                    orient: 'vertical',
+                                    right: 0,
+                                },
+                                title: [{
+                                    text: 'Total # of nodes: ' + body.node.map(
+                                        node => node.NumberOfNodes).reduce((sum, value) =>
+                                        sum + value, 0),
+                                    textStyle: {
+                                        fontSize: 15
+                                    }
+                                }, ],
+                                series: [{
+                                    id: "node",
+                                    type: 'pie',
+                                    radius: ['40%', '70%'],
+                                    center: ['30%', '50%'],
+                                    itemStyle: {
+                                        borderRadius: 10,
+                                        borderColor: '#fff',
+                                        borderWidth: 2
+                                    },
+                                    label: {
+                                        formatter: '{c}',
+                                        position: 'inside'
+                                    },
+                                    emphasis: {
+                                        label: {
+                                            show: true,
+                                            fontSize: '40',
+                                            fontWeight: 'bold'
+                                        }
+                                    },
+                                    labelLine: {
+                                        show: false
+                                    },
+                                    data: body.node.map(bin => ({
+                                        name: bin.NodeType.join(' & '),
+                                        value: bin.NumberOfNodes
+                                    })),
+                                }, ]
+                            };
+                            this.nodeChart.setOption(option)
+                            element = this.$refs.edgecanvas
+                            this.edgeChart = echarts.init(element);
+                            option = {
+                                tooltip: {
+                                    trigger: 'item'
+                                },
+                                legend: {
+                                    type: 'scroll',
+                                    orient: 'vertical',
+                                    right: 0,
+                                },
+                                title: [{
+
+                                    text: 'Total # of edges: ' + body.edge.map(
+                                        node => node.RelationshipNumber).reduce((sum,
+                                        value) => sum + value, 0),
+                                    textStyle: {
+                                        fontSize: 15
+                                    }
+                                }, ],
+                                series: [{
+                                    id: "edge",
+                                    type: 'pie',
+                                    radius: ['40%', '70%'],
+                                    center: ['30%', '50%'],
+                                    itemStyle: {
+                                        borderRadius: 10,
+                                        borderColor: '#fff',
+                                        borderWidth: 2
+                                    },
+                                    label: {
+                                        formatter: '{c}',
+                                        position: 'inside'
+                                    },
+                                    emphasis: {
+                                        label: {
+                                            show: true,
+                                            fontSize: '40',
+                                            fontWeight: 'bold'
+                                        }
+                                    },
+                                    labelLine: {
+                                        show: false
+                                    },
+                                    data: body.edge.map(bin => ({
+                                        name: bin.RelationshipName,
+                                        value: bin.RelationshipNumber
+                                    })),
+                                }]
+                            };
+                            this.edgeChart.setOption(option)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+
+            }
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+        mounted: function () {
+            new ResizeObserver(() => {
+                if(this.nodeChart)this.nodeChart.resize()
+                if(this.edgeChart)this.edgeChart.resize()
+            }).observe(this.$el)
+            this.loadData()
+        },
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

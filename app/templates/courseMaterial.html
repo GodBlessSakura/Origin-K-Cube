@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+<v-container style="height: 100%;">
+    <v-row>
+        <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" hide-details>
+        </v-text-field>
+    </v-row>
+    <v-row>
+        <v-data-table show-group-by :headers="headers" style="width:100%" :items="materials" :items-per-page="500"
+            multi-sort :search="search">
+            <template v-slot:item.actions="{ item }">
+                <v-icon @click="newTab(item.url)">
+                    open_in_new
+                </v-icon>
+            </template>
+        </v-data-table>
+    </v-row>
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+            search: new URLSearchParams(window.location
+                .search).get('concept'),
+            materials: [],
+            headers: [{
+                text: 'Material concept',
+                value: 'concept',
+            },
+            {
+                text: 'Description',
+                value: 'desc',
+                groupable: false,
+            },
+            {
+                text: 'Instructor',
+                value: 'user',
+            },
+            {
+                text: 'Open in new tab',
+                value: 'actions',
+                groupable: false,
+            },
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                let materialPromise = fetch(
+                    "{{ url_for('RESTful.material.query', courseCode = courseCode) | safe}}", {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.materials = []
+                        if (body.materials) {
+                            body.materials.forEach(d => {
+                                this.materials.push(d)
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting materials information.')
+                        }
+                    })
+                let entityPromise = fetch("{{ url_for('RESTful.entity.query', list=True) }}", {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.entities) {
+                            this.concepts = body.entities.map(e => e.concept.name)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+
+                        }
+                    })
+                Promise.all([materialPromise, entityPromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            newTab(url) {
+                let w = window.open(url, '_blank')
+            },
+        },
+        mounted: function () {
+            self = this
+            window.onmessage = function (e) {
+                console.log(e)
+                self.search = e.data
+            };
+            this.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

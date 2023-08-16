@@ -1,0 +1,167 @@
+{% set widgetComponentName = 'kcube-' + request.blueprint + '-overview' %}
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;">
+    <v-container style="height: 100%; width: 100%;">
+        <v-row no-gutters style="height: 50%">
+            <v-col style="width: 70%">
+                <div ref="canvas" style="height: 99%; width: 99%;"></div>
+            </v-col>
+            <v-col style="width: 30%">
+                <v-row no-gutters>
+                    Click to see update request of course content from instructors:
+                </v-row>
+                <v-row no-gutters>
+                    <v-slide-group show-arrows>
+                        <v-slide-item v-for="courseCode in courseWithPullRequest">
+                            <v-btn class="mx-2" depressed rounded @click="openPullRequestPage(courseCode)">
+                                ${ courseCode }
+                            </v-btn>
+                        </v-slide-item>
+                    </v-slide-group>
+                </v-row>
+            </v-col>
+        </v-row>
+        <v-row no-gutters style="height: 50%">
+        </v-row>
+    </v-container>
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="{{widgetComponentName}}">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    (() => {
+        widgetName = 'overview'
+        widgetComponentName = '{{widgetComponentName}}'
+        KCube.widgetName.push(widgetName)
+        KCube.widgetOptions[widgetName] = {
+            component: widgetComponentName,
+            minH: 2,
+            minW: 2,
+            maxH: 2,
+            maxW: 3,
+        }
+    })();
+    Vue.component(widgetComponentName, {
+        data: () => ({
+            courseWithPullRequest: undefined
+        }),
+        methods: {
+            openPullRequestPage(courseCode) {
+                window.open(
+                    "{{ url_for('DLTC.pullRequest') }}/" + courseCode
+                )
+            },
+
+            loadData() {
+                fetch("{{ url_for('RESTful.branch.query', pullSummary=True) }}", {
+                        method: "GET",
+                        ...dashboardOption.fetchOption
+                    }).then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.items) {
+                            let element = this.$refs.canvas
+                            this.chart = echarts.init(element);
+                            body.items = body.items.map(item => {
+                                if (item.branch.canPullDate)
+                                    item.branch.canPullDate = new Date(item.branch.canPullDate
+                                        .split('T')[0])
+                                return item
+                            })
+
+                            let today = new Date()
+                            let firstDay = Math.min(...body.items.filter(item => item.branch.canPullDate)
+                                .map(item => item.branch.canPullDate))
+                            body.items = body.items.map(item => {
+                                if (item.branch.canPullDate == undefined)
+                                    item.branch.canPullDate = new Date(firstDay)
+                                return item
+                            })
+                            firstDay = new Date(firstDay)
+                            let days = []
+                            for (; firstDay < today; firstDay.setDate(firstDay.getDate() + 1)) {
+                                days.push(firstDay.toLocaleDateString())
+                            }
+                            let option = {
+                                legend: {
+                                    data: body.items.map(item => item.course.name)
+                                },
+                                xAxis: {
+                                    data: days,
+                                },
+                                yAxis: {
+                                    minInterval: 1
+                                },
+                                tooltip: {
+                                    trigger: 'axis',
+                                    //formatter: "click to check pull request from the course"
+                                },
+                                yAxis: {},
+                                series: body.items.reduce((series, item) => {
+                                    let date = item.branch.canPullDate.toLocaleDateString()
+                                    let foundSeries = series.filter(s => s.name == item.course
+                                        .name)
+                                    if (foundSeries.length > 0) {
+                                        for (let foundIndex = foundSeries[0].data.map(data =>
+                                                data[0]).indexOf(date); foundIndex <
+                                            foundSeries[0].data.length; foundIndex++)
+                                            foundSeries[0].data[foundIndex][1]++
+                                    } else {
+                                        series.push({
+                                            name: item.course.name,
+                                            type: 'line',
+                                            stack: 'Total',
+                                            areaStyle: {},
+                                            emphasis: {
+                                                focus: 'series'
+                                            },
+                                            data: days.map(day => [day, (day >= date ?
+                                                1 : 0)])
+                                        }, )
+                                    }
+                                    return series
+                                }, [])
+                            };
+                            this.chart.setOption(option)
+                            this.chart.getZr().on('click', (params) => {
+                                Object.keys(params.target).filter(key => key.includes(
+                                    '__ec_inner_')).filter(key => params.target[key]
+                                    .seriesIndex != undefined).forEach(key => {
+                                    this.openPullRequestPage(option.series[params.target[
+                                            key]
+                                        .seriesIndex].name)
+                                })
+                            });
+                            this.courseWithPullRequest = option.series.map(s => s.name)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+
+            }
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+        mounted: function () {
+            new ResizeObserver(() => {
+                if (this.chart) this.chart.resize()
+            }).observe(this.$el)
+            this.loadData()
+        },
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

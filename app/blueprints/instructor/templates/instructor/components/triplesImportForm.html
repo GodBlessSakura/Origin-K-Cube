@@ -1,0 +1,236 @@
+{% macro componentContent() %}
+<v-card>
+    <v-tabs>
+        <v-tab>
+            Json import
+        </v-tab>
+        <v-tab>
+            CSV import
+        </v-tab>
+        <v-tab>
+            File import
+        </v-tab>
+        <v-tab>
+            Version import
+        </v-tab>
+        <v-tab-item>
+            <v-card flat>
+                <v-textarea v-model="jsonString" label='json array' persistent-placeholder
+                    :placeholder="'[{&quot;h_name&quot;: &quot;COMP1&quot;, &quot;r_name&quot;: &quot;Has Subtopic&quot;, &quot;t_name&quot;:&quot;Cyber security&quot;, &quot;r_value&quot;:false }]\n triple with true or undefined r_value is considered as an edge creation, false is for edge removal.'">
+                </v-textarea>
+                <v-btn @click="jsonTextPreview(jsonString)">
+                    preview
+                </v-btn>
+            </v-card>
+        </v-tab-item>
+        <v-tab-item>
+            <v-card flat>
+                <v-textarea v-model="csvString" label='CSV' persistent-placeholder
+                    placeholder="COMP1,Subtopic in,Cyber security">
+                </v-textarea>
+                <v-btn @click="csvTextPreview(csvString)">
+                    preview
+                </v-btn>
+            </v-card>
+        </v-tab-item>
+        <v-tab-item>
+            <v-card flat style="height: 227px">
+                <v-card-text align="center" justify="center">
+                    <v-icon class="mt-5" size="60">upload</v-icon>
+                    <p>
+                        Drop your json / csv file here, or click to select them.
+                    </p>
+                    <input @input="onFileDrop($event)" type="file" ref="fileInput" style="display:none" />
+                </v-card-text>
+            </v-card>
+            <div @click="$refs?.fileInput?.click()"
+                style="height: 100%; width: 100%; z-index: 500; position: absolute; top: 0; left: 0"
+                @drop.prevent="onFileDrop($event)" @dragenter.prevent @dragover.prevent>
+            </div>
+        </v-tab-item>
+        <v-tab-item>
+            <v-card flat style="height: 227px">
+                <v-autocomplete return-object :items="trunkOrBranch" item-text="tag" item-value="deltaGraphId"
+                    v-model="selectedNode"
+                    label="base on version (★ for the active version provided by the department):">
+                    <template v-slot:selection="data">
+                        <template>
+                            <v-chip>
+                                <v-list-item-content v-text="data.item.tag">
+                                </v-list-item-content>
+                                <v-icon v-if="data.item.isActive" small>star</v-icon>
+                            </v-chip>
+                        </template>
+                    </template>
+                    <template v-slot:item="data">
+                        <template>
+                            <v-list-item-content v-text="data.item.tag">
+                            </v-list-item-content>
+                            <v-icon v-if="data.item.isActive" small>star</v-icon>
+                        </template>
+                    </template>
+                </v-autocomplete>
+                <v-btn @click="versionPreview()">
+                    preview
+                </v-btn>
+            </v-card>
+        </v-tab-item>
+    </v-tabs>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-triplesImport-form">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-triplesImport-form', {
+        props: {
+            courseCode: String
+        },
+        data: () => ({
+            jsonString: '',
+            csvString: '',
+            selectedNode: null,
+            trunkOrBranch: undefined,
+        }),
+        watch: {
+            courseCode: function (newValue, oldValue) {
+                this.loadData(newValue)
+            }
+        },
+        methods: {
+            loadData(courseCode) {
+                console.log("meow")
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get') }}" + this.courseCode +
+                        "?isInstructor=True&amp;isDLTC=False", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.trunkOrBranch = [];
+                        if (body.edges && body.trunk_nodes && body.branch_nodes && body.workspace_nodes) {
+                            this.trunkOrBranch = [];
+                            [body.trunk_nodes, body.branch_nodes].forEach(nodes => {
+                                nodes.forEach(node => {
+                                    let item = {
+                                        tag: node.property.tag,
+                                        deltaGraphId: node.property.deltaGraphId,
+                                        isActive: node.isActive
+                                    }
+                                    this.trunkOrBranch.push(item)
+                                    if (node.isActive) {
+                                        this.selectedNode = item
+                                    }
+                                })
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+                Promise.all([treePromise]).then(_ => {})
+            },
+            jsonTextPreview(jsonString) {
+                try {
+                    let triples = JSON.parse(jsonString.trim())
+                    console.log(triples)
+                    this.$emit('triples', triples)
+                } catch (e) {
+                    console.log(e)
+                    this.$emit('json-error')
+                    this.$root.errorDisplay({},
+                        'Textual import is not a valid json string.')
+                }
+            },
+            csvTextPreview(csvString) {
+                let rows = csvString.trim().split('\n')
+                let rowify = (row) => {
+                    let line = row.split(',')
+                    return {
+                        "h_name": line[0],
+                        "r_name": line[1],
+                        "t_name": line[2]
+                    }
+                }
+                let triples = rows.map(rowify)
+                this.$emit('triples', triples)
+            },
+            versionPreview() {
+                if (this.selectedNode) {
+                    fetch(
+
+                            "{{ url_for('RESTful.graph.get') }}/" + this.selectedNode.deltaGraphId, {
+                                method: 'GET',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            if (body.graph && body.triples) {
+                                this.$emit('triples', body.triples)
+                            } else {
+                                this.$root.errorDisplay(body,
+                                    'Unexpected error on getting versions information.')
+                            }
+                        })
+
+                }
+            },
+            onFileDrop(e) {
+                let file
+                if (e.dataTransfer) {
+                    file = e.dataTransfer.files.item(0)
+                } else {
+                    file = this.$refs.fileInput.files.item(0)
+                }
+                switch (file.name.split('.').at(-1)) {
+                    case "json":
+                        file.text().then(text => this.jsonTextPreview(text))
+                        break;
+                    case "csv":
+                        file.text().then(text => this.csvTextPreview(text))
+                        break
+                    default:
+                        this.$root.errorDisplay({},
+                            'Only json or csv file is accepted.');
+
+                }
+            }
+
+        },
+        template: '#kcube-triplesImport-form',
+        mounted() {
+            this.loadData(this.courseCode)
+        },
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

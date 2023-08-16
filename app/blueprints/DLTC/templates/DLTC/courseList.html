@@ -1,0 +1,1309 @@
+{% extends "layout.html" %}
+{% import 'layout.html' as layout with context %}
+{% block VueComponent %}
+
+<v-container>
+    <v-row ref="shepherd-searchText">
+        <v-col>
+            <v-text-field v-model="searchText" label="search" @input="search()"></v-text-field>
+        </v-col>
+        <v-col cols="auto" align-self="center">
+            <v-btn small text @click="showAdvanceSearch=!showAdvanceSearch">Advance Search</v-btn>
+        </v-col>
+    </v-row>
+    <v-row no-gutters v-show="showAdvanceSearch">
+        {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+        <v-col align-self="center" cols="auto">
+            <span class="mr-4">filters:</span>
+        </v-col>
+        <v-col align-self="center" cols="auto" ref="shepherd-filter">
+            <v-slide-group>
+                <v-chip filter v-model="filter.public"
+                    @click="filter.public = !filter.public; filter.internal = filter.public?false:filter.internal; search()">
+                    public</v-chip>
+                <v-chip filter v-model="filter.internal"
+                    @click="filter.internal = !filter.internal; filter.public = filter.internal?false:filter.public; search()">
+                    internal</v-chip>
+                {% if request.blueprint == "instructor" %}
+                <v-divider vertical style="margin-left: 8px; margin-right: 8px;"></v-divider>
+                <v-chip filter v-model="filter.joined" @click="filter.joined = !filter.joined; search();" dense
+                    hide-details>on-duty
+                </v-chip>
+                {% endif %}
+            </v-slide-group>
+        </v-col>
+        <v-col align-self="center" cols="auto">
+            <v-btn @click="clearFilter(); search();" small>
+                clear <v-icon>close</v-icon>
+            </v-btn>
+        </v-col>
+        {% endif %}
+    </v-row>
+    {% if request.blueprint == "instructor"%}
+    <v-row>
+        <v-col cols="auto">
+            <v-tabs :value="filter.working?1:0" center-active @change="selectTab">
+                <v-tab>All courses</v-tab>
+                <v-tab>My space</v-tab>
+                <v-tab>My publishment</v-tab>
+            </v-tabs>
+        </v-col>
+        {% if request.blueprint == "instructor"  %}
+        <v-spacer></v-spacer>
+        <v-col cols="auto" v-show="filter.working==true || filter.working==null">
+            <v-btn color="success" @click="dutyDialgue=!dutyDialgue" ref="shepherd-joinNewCourse">
+                <v-icon left>rule</v-icon>Manage course duty
+            </v-btn>
+        </v-col>
+        {% endif %}
+    </v-row>
+
+    {% endif %}
+    {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+    <v-row v-for="row in [...Array(Math.ceil(courses.length/colPerRow)).keys()]">
+        <v-col v-for="col in  [...Array(colPerRow).keys()]" cols="4" class="d-flex" style="flex-direction:column">
+            <v-card v-if="courses[row*colPerRow + col]"
+                @click="courses[row*colPerRow + col].workspaces.length == 0?openWorkspaceDialogue(courses[row*colPerRow + col]):openURL('{{ url_for('instructor.workspace') }}' + courses[row*colPerRow + col].workspaces[0].deltaGraphId)"
+                :ref="''+courses[row * colPerRow + col].courseCode"
+                :ripple="{class: courses[row * colPerRow + col].isTeaching && !courses[row * colPerRow + col].hasExposedGraph?'error--text':''}">
+                <v-list-item three-line>
+                    <v-list-item-content>
+                        <div style="cursor: pointer;">
+                            <v-list-item-title>
+                                ${courses[row*colPerRow + col].courseCode}
+                                {% if request.blueprint == "instructor" %}
+                                <v-icon>
+                                    launch
+                                </v-icon>
+                                {% endif %}
+                            </v-list-item-title>
+                        </div>
+                    </v-list-item-content>
+
+                    <v-badge bordered
+                        :icon="courses[row * colPerRow + col].isTeaching && !courses[row * colPerRow + col].hasExposedGraph?'priority_high':'work'"
+                        offset-x="24" offset-y="24"
+                        :color="courses[row * colPerRow + col].isTeaching && !courses[row * colPerRow + col].hasExposedGraph?'error':'info'"
+                        :value="courses[row*colPerRow + col].workspaces?.length > 0 || courses[row * colPerRow + col].isTeaching && !courses[row * colPerRow + col].hasExposedGraph">
+                        <v-list-item-avatar tile size="96">
+                            <v-img :src="courses[row*colPerRow + col].imageURL"></v-img>
+                        </v-list-item-avatar>
+                    </v-badge>
+                    <v-menu bottom offset-y>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-list-item-icon v-bind="attrs" v-on="on">
+                                <v-icon>more_vert</v-icon>
+                            </v-list-item-icon>
+                        </template>
+                        <v-list class="no-padding-list" dense>
+                            <v-subheader style="height: auto; font-size: small;">page</v-subheader>
+                            {% if request.blueprint == "instructor" %}
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('instructor.repositories') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>table_view</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Repository</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('instructor.coursePlan') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>edit_calendar</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Course Plan</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('instructor.material') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>add_link</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Course Resources</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('instructor.versionTree') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>account_tree</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Versions</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            {% elif request.blueprint == "DLTC" %}
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('DLTC.coursePlan') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>edit_calendar</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Course Plan</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('DLTC.versionTree') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>account_tree</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Versions</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('DLTC.pullRequest') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>library_add</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Approve Updates</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            :href="'{{ url_for('DLTC.trunkVersions') }}/' + courses[row*colPerRow + col].courseCode"
+                                            icon>
+                                            <v-icon>library_add_check</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Manage Versions</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            {% endif %}
+                            <v-divider></v-divider>
+                            <v-subheader style="height: auto; font-size: small;">action</v-subheader>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            @click.stop="courseAssignment(courses[row*colPerRow + col])" icon>
+                                            <v-icon>assignment_ind</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>List Course Instructor</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            {% if request.blueprint == "instructor" %}
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            @click.stop="openGraphImportDialogue(courses[row*colPerRow + col])" icon>
+                                            <v-icon>file_upload</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Import graph</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            @click.stop="courseInfo(courses[row*colPerRow + col])" icon>
+                                            <v-icon>edit</v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>Edit info</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            {% elif request.blueprint == "DLTC" %}
+                            <v-list-item>
+                                <v-tooltip bottom>
+                                    <template v-slot:activator="{ on, attrs }">
+                                        <v-btn v-bind="attrs" v-on="on"
+                                            @click.stop="courseIsInternal(courses[row*colPerRow + col])" icon>
+                                            <v-icon>${courses[row*colPerRow + col].isInternal ===
+                                                false?'public_off':'public'}
+                                            </v-icon>
+                                        </v-btn>
+                                    </template>
+                                    <span>${courses[row*colPerRow + col].isInternal === false?'set internal':
+                                        'set public'}</span>
+                                </v-tooltip>
+                            </v-list-item>
+                            {% endif %}
+                        </v-list>
+                    </v-menu>
+                </v-list-item>
+                <v-card-actions>
+                    {% if request.blueprint == "DLTC" %}
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn :color="courses[row*colPerRow + col].isInternal === false?'success':'grey'"
+                                @click.stop="courseIsInternal(courses[row*colPerRow + col])" v-bind="attrs" v-on="on"
+                                outlined>
+                                <v-icon left>public</v-icon>
+                                public
+                            </v-btn>
+                        </template>
+                        ${'click to '+(courses[row*colPerRow + col].isInternal === false?'set internal':'set public')}
+                    </v-tooltip>
+                    <v-spacer></v-spacer>
+                    <v-slide-group style="padding: unset">
+                        <v-slide-item>
+                            <v-subheader style="height: auto; font-size: small;">page</v-subheader>
+                        </v-slide-item>
+                        <v-slide-item>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn v-bind="attrs" v-on="on" color="info"
+                                        :href="'{{ url_for('DLTC.coursePlan') }}/' + courses[row*colPerRow + col].courseCode"
+                                        icon>
+                                        <v-icon>edit_calendar</v-icon>
+                                    </v-btn>
+                                </template>
+                                <span>Course Plan</span>
+                            </v-tooltip>
+                        </v-slide-item>
+                        <v-slide-item>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn v-bind="attrs" v-on="on" color="info"
+                                        :href="'{{ url_for('DLTC.versionTree') }}/' + courses[row*colPerRow + col].courseCode"
+                                        icon>
+                                        <v-icon>account_tree</v-icon>
+                                    </v-btn>
+                                </template>
+                                <span>Versions</span>
+                            </v-tooltip>
+                        </v-slide-item>
+                        <v-slide-item>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn v-bind="attrs" v-on="on" color="info" ref="shepherd-approveUpdates"
+                                        :href="'{{ url_for('DLTC.pullRequest') }}/' + courses[row*colPerRow + col].courseCode"
+                                        icon>
+                                        <v-icon>library_add</v-icon>
+                                    </v-btn>
+                                </template>
+                                <span>Approve Updates</span>
+                            </v-tooltip>
+                        </v-slide-item>
+                        <v-slide-item>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn v-bind="attrs" v-on="on" color="info" ref="shepherd-manageVersions"
+                                        :href="'{{ url_for('DLTC.trunkVersions') }}/' + courses[row*colPerRow + col].courseCode"
+                                        icon>
+                                        <v-icon>library_add_check</v-icon>
+                                    </v-btn>
+                                </template>
+                                <span>Manage Versions</span>
+                            </v-tooltip>
+                        </v-slide-item>
+                        <v-divider vertical></v-divider>
+                        <v-slide-item>
+                            <v-subheader style="height: auto; font-size: small;">action</v-subheader>
+                        </v-slide-item>
+                        <v-slide-item>
+                            <v-tooltip bottom>
+                                <template v-slot:activator="{ on, attrs }">
+                                    <v-btn v-bind="attrs" v-on="on" color="info" ref="shepherd-listCourseInstructor"
+                                        @click.stop="courseAssignment(courses[row*colPerRow + col])" icon>
+                                        <v-icon>assignment_ind</v-icon>
+                                    </v-btn>
+                                </template>
+                                <span>List Course Instructor</span>
+                            </v-tooltip>
+                        </v-slide-item>
+                    </v-slide-group>
+                    {% endif %}
+                    {% if request.blueprint == "instructor" %}
+                    <v-tooltip bottom>
+                        <template v-slot:activator="{ on, attrs }">
+                            <v-btn :color="courses[row*colPerRow + col].isTeaching === true?'success':'error'"
+                                @click.stop="courses[row*colPerRow + col].isTeaching === true?quit(courses[row*colPerRow + col]):join(courses[row*colPerRow + col])"
+                                v-bind="attrs" v-on="on" v-show="filter.working === true">
+                                <!-- <v-icon left>public</v-icon> -->
+                                duty
+                            </v-btn>
+                        </template>
+                        ${'click to '+(courses[row*colPerRow + col].isTeaching === true?'off duty':'on duty')}
+                    </v-tooltip>
+                    <v-spacer></v-spacer>
+                    <v-btn v-if="courses[row*colPerRow + col].workspaces.length == 0"
+                        @click.stop="openWorkspaceDialogue(courses[row*colPerRow + col])">
+                        create mind map &nbsp;<v-icon small>work_outline</v-icon>
+                    </v-btn>
+                    <div v-else>
+                        <v-tooltip bottom>
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-btn v-bind="attrs" v-on="on" color="success" style="width: 36px; min-width: unset;"
+                                    @click.stop="openWorkspaceDialogue(courses[row*colPerRow + col])"
+                                    ref="shepherd-newWorkspace">
+                                    <v-icon>
+                                        add_box</v-icon>
+                                </v-btn>
+                            </template>
+                            new workspace
+                        </v-tooltip>
+                        <v-tooltip bottom>
+                            <template v-slot:activator="{ on, attrs }">
+                                <v-btn v-bind="attrs" v-on="on" color="info" ref="shepherd-recentVisit" @click.stop
+                                    :href="'{{ url_for('instructor.workspace') }}' + courses[row*colPerRow + col].workspaces[0].deltaGraphId">
+                                    recent visit &nbsp;<v-icon small>work</v-icon>
+                                </v-btn>
+                            </template>
+                            ${courses[row*colPerRow + col].workspaces[0].tag}
+                        </v-tooltip>
+                    </div>
+                    {% endif %}
+                </v-card-actions>
+            </v-card>
+        </v-col>
+    </v-row>
+    {% elif request.blueprint == "collaborate" %}
+    <v-row v-for="row in [...Array(Math.ceil(courses.length/colPerRow)).keys()]">
+        <v-col v-for="col in  [...Array(colPerRow).keys()]" cols="4" class="d-flex" style="flex-direction:column">
+            <v-card v-if="courses[row*colPerRow + col]"
+                :href="'{{ url_for('collaborate.feedbacks') }}/' + courses[row*colPerRow + col].courseCode">
+                <v-list-item three-line>
+                    <v-list-item-content>
+                        <v-list-item-title>
+                            ${courses[row*colPerRow + col].courseCode}
+                        </v-list-item-title>
+                    </v-list-item-content>
+                    <v-list-item-avatar tile size="96">
+                        <img :src="courses[row*colPerRow + col].imageURL">
+                    </v-list-item-avatar>
+                </v-list-item>
+            </v-card>
+        </v-col>
+    </v-row>
+    {% endif %}
+    <v-row v-if="courses.length == 0">
+        <v-col>
+            No course ${searchText!=""? 'contains "' + searchText + '" in course name' : ""}
+            ${filter_length>0? 'with current filter configuration':''}.
+            <br>
+            You may perform following actions to see related courses with relaxed constraint:
+        </v-col>
+    </v-row>
+    <div v-if="filter.working">
+        <v-row v-if="courses.length == 0 && num_all_courses_w_filter > 0">
+            <v-col>There will be ${num_all_courses_w_filter} result${num_all_courses_w_filter>1?'s':''} in "All
+                courses".
+                <br>
+                <v-btn @click="filter.working=false; search();">Go to "All courses"</v-btn>
+            </v-col>
+        </v-row>
+        <v-row v-if="courses.length == 0 && num_working_courses_wo_filter > 0 && filter_length > 1">
+            <v-col>There will be ${num_working_courses_wo_filter} result${num_working_courses_wo_filter>1?'s':''} here
+                if
+                no filter is applied.
+                <br>
+                <v-btn @click="clearFilter(); search();">clear filter</v-btn>
+            </v-col>
+        </v-row>
+
+    </div>
+    <div v-else>
+
+    </div>
+    <v-row v-if="courses.length == 0 && num_courses_wo_filter>0">
+        <v-col>There will be ${num_courses_wo_filter} result${num_courses_wo_filter>1?'s':''}
+            ${filter.working?'in "All courses" ':""}
+            if no filter is applied.
+            <br>
+            <v-btn @click="clearFilter([]); search();">${filter.working?'Show "All coureses" without filter':
+                "clear filter"}</v-btn>
+        </v-col>
+    </v-row>
+    <div v-if="num_courses_wo_search_text>0">
+        <v-row v-if=" courses.length==0 && num_courses_wo_search_text>0">
+            <v-col>There will be ${num_courses_wo_search_text} result${num_courses_wo_search_text>1?'s':''}
+                if no search text is applied.
+                <br>
+                <v-btn @click="searchText=''; search();">clear search text</v-btn>
+            </v-col>
+        </v-row>
+    </div>
+    <v-row v-if="courses.length == 0 && num_courses_wo_search_text == 0 && num_courses_wo_filter == 0">
+        <v-col>No course with current search text "${searchText}" and filter setting.
+            <br>
+            <v-btn @click="clearFilter([]); searchText='';search()">clear search text & filter</v-btn>
+        </v-col>
+    </v-row>
+    {% if request.blueprint == "instructor" %}
+    <v-dialog v-model="dutyDialgue" max-width="80vw">
+        <v-card>
+            <v-card-title>
+                <v-text-field v-model="dutySearchText" label="search""></v-text-field></v-card-title>
+            <v-card-text>
+                <v-subheader>On duty</v-subheader>
+                <v-tooltip bottom v-for=" course in allCourses"
+                    v-if="course.isTeaching && (dutySearchText == '' ? true : (course.courseCode.toLowerCase().includes(dutySearchText.toLowerCase()) || course.courseName.toLowerCase().includes(dutySearchText.toLowerCase())))">
+                    <template v-slot:activator="{ on, attrs }">
+                        <v-chip v-bind="attrs" v-on="on" @click="quit(course)" close-icon="expand_more">
+                            ${course.courseCode}
+                            <v-icon right>expand_more</v-icon>
+                        </v-chip>
+                    </template>
+                    ${course.courseName}
+                    </v-tooltip>
+                    </v-card-text>
+                    <v-card-text>
+                        <v-subheader>Off duty</v-subheader>
+                        <v-tooltip bottom v-for="course in allCourses"
+                            v-if="!course.isTeaching && (dutySearchText == '' ? true : (course.courseCode.toLowerCase().includes(dutySearchText.toLowerCase()) || course.courseName.toLowerCase().includes(dutySearchText.toLowerCase())))">
+                            <template v-slot:activator="{ on, attrs  }">
+                                <v-chip v-bind="attrs" v-on="on" @click="join(course)" close-icon="expand_less">
+                                    ${course.courseCode}
+                                    <v-icon right>expand_less</v-icon>
+                                </v-chip>
+                            </template>
+                            ${course.courseName}
+                        </v-tooltip>
+                    </v-card-text>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-model="workspaceDialogue" max-width="500px" eager>
+        <kcube-workspace-form ref="workspaceForm"></kcube-workspace-form>
+    </v-dialog>
+    <v-dialog v-model="coursePreviewDialogue" max-width="80vw" max-height="70vh" eager>
+        <iframe ref="coursePreviewIframe" :src="coursePreviewUrl" style="height: 50vh; width:100%" frameBorder="0"
+            scrolling="no"></iframe>
+    </v-dialog>
+    <v-dialog v-model="graphImportDialogue" max-width="500px" eager>
+        <kcube-graphImport-form ref="graphImportForm"></kcube-graphImport-form>
+    </v-dialog>
+    <v-dialog v-model="courseInfoDialogue" max-width="500px">
+        <v-card v-if="course">
+            <v-card-title>${course.courseName}</v-card-title>
+            <v-card-text>
+                <v-form ref="courseInfoFormControl">
+                    <v-container>
+                        <v-row>
+                            <v-text-field v-model="courseCode" :rules="courseCodeRules" label="Cource Code" required>
+                            </v-text-field>
+                        </v-row>
+                        <v-row>
+                            <v-text-field v-model="courseName" :rules="courseNameRules" label="Course Name" required>
+                            </v-text-field>
+                        </v-row>
+                        <v-row>
+                            <v-select label="Image url" v-model="imageURL" :rules="imageURLRules" :items="imagesUrl"
+                                required>
+                                <template v-slot:item="{ item }">
+                                    <v-img :src="item" height="40" contain></v-img>
+                                </template>
+                            </v-select>
+                        </v-row>
+                        <v-row>
+                            <v-btn @click="updateCourseInfo()" color="success">
+                                update
+                            </v-btn>
+                        </v-row>
+                    </v-container>
+                </v-form>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+    {% endif %}
+    {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+    <v-dialog v-model="instructorDialogue" max-width="500px">
+        {% if request.blueprint == "instructor" %}
+        <v-card v-if="course">
+            <v-card-title>Instructors for ${course.courseName}</v-card-title>
+            <v-card-text>
+                <v-subheader>Joined</v-subheader>
+                <v-tooltip bottom v-for="instructor in instructors" v-if="instructor.isTeaching">
+                    <template v-slot:activator="{ on, attrs  }">
+                        <v-chip v-bind="attrs" v-on="on">
+                            ${instructor.user.userId}
+                        </v-chip>
+                    </template>
+                    ${instructor.user.email}
+                </v-tooltip>
+            </v-card-text>
+        </v-card>
+        {% else %}
+        <v-card v-if="course">
+            <v-card-title>Instructors for ${course.courseName}</v-card-title>
+            <v-card-text>
+                <v-subheader>Assigned</v-subheader>
+                <v-tooltip bottom v-for="instructor in instructors" v-if="instructor.isTeaching">
+                    <template v-slot:activator="{ on, attrs  }">
+                        <v-chip v-bind="attrs" v-on="on" @click="unassign(instructor.user.userId)"
+                            close-icon="expand_more">
+                            ${instructor.user.userName}
+                            <v-icon right>expand_more</v-icon>
+                        </v-chip>
+                    </template>
+                    ${instructor.user.email}
+                </v-tooltip>
+            </v-card-text>
+            <v-card-text>
+                <v-subheader>Not assigned</v-subheader>
+                <v-tooltip bottom v-for="instructor in instructors" v-if="!instructor.isTeaching">
+                    <template v-slot:activator="{ on, attrs  }">
+                        <v-chip v-bind="attrs" v-on="on" @click="assign(instructor.user.userId)"
+                            close-icon="expand_less">
+                            ${instructor.user.userName}
+                            <v-icon right>expand_less</v-icon>
+                        </v-chip>
+                    </template>
+                    ${instructor.user.email}
+                </v-tooltip>
+            </v-card-text>
+        </v-card>
+        {% endif %}
+    </v-dialog>
+    {% endif %}
+</v-container>
+{% endblock %}
+{% block VueComponentScript %}
+{% if request.blueprint == "instructor" %}
+{% include "instructor/components/workspaceForm.html" %}
+{% include "instructor/components/graphImportForm.html" %}
+{% endif %}
+
+<style>
+    .no-padding-list>* {
+        padding: unset
+    }
+</style>
+<script>
+    Vue.component('app-content', {
+        data: () => ({
+            colPerRow: 3,
+            allCourses: [],
+            courses: [],
+            searchText: new URLSearchParams(window.location.search).get('search') ? new URLSearchParams(
+                window.location.search).get('search') : "",
+            course: null,
+            showAdvanceSearch: false,
+            // {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+            num_courses_wo_filter: null,
+            num_courses_wo_search_text: null,
+            coursePreviewUrl: "",
+            filter: {
+                public: false,
+                internal: false,
+                // {% if request.blueprint == "instructor" %}
+                joined: new URLSearchParams(window.location.search).get('duty') != null,
+                notJoined: !(new URLSearchParams(window.location.search).get('duty') != null),
+                working: new URLSearchParams(window.location.search).get('working') != null,
+                notWorking: !(new URLSearchParams(window.location.search).get('working') != null),
+                exposed: new URLSearchParams(window.location.search).get('published') != null,
+                notExposed: !(new URLSearchParams(window.location.search).get('published') != null)
+                // {% endif %}
+            },
+            instructorDialogue: false,
+            instructors: null,
+            // {% endif %}
+            // {% if request.blueprint == "instructor" %}
+            space: [],
+            publish: [],
+            dutySearchText: '',
+            num_working_courses_wo_filter: null,
+            num_all_courses_w_filter: null,
+            dutyDialgue: false,
+            workspaceDialogue: false,
+            courseInfoDialogue: false,
+            graphImportDialogue: false,
+            coursePreviewDialogue: false,
+            imagesUrl: [
+                //{% for url in imagesUrl %}
+                '{{ url | safe}}',
+                //{% endfor %}
+            ],
+            courseCode: '',
+            courseCodeRules: [v => !!v || 'Course code is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Course code should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["courseCode"]}}/.test(v)) ||
+                'Course code can only contains alphanumeric characters and space.'
+            ],
+            courseName: '',
+            courseNameRules: [v => !!v || 'Course name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Course name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["courseName"]}}/.test(v)) ||
+                'Course name can only contains alphanumeric characters and space.'
+            ],
+            imageURL: '',
+            imageURLRules: [],
+            // {% endif %}
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch(
+                        // {% if request.blueprint == "DLTC" %}
+                        "{{ url_for('RESTful.course.query', internal=True) }}",
+                        // {% elif request.blueprint == "instructor" %}
+                        "{{ url_for('RESTful.course.query', instructor=True) }}",
+                        // {% else %}
+                        "{{ url_for('RESTful.course.query', list=True) }}",
+                        // {% endif %}
+                        {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.courses) {
+                            // {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+                            // if (body.courses.filter(c => c.isTeaching).length == 0) this.filter.joined =
+                            //     false
+                            // {% endif %}
+                            body.courses.sort((a, b) => {
+                                if (a.concept.name < b.concept.name) {
+                                    return -1;
+                                }
+                                if (a.concept.name > b.concept.name) {
+                                    return 1;
+                                }
+                                return 0;
+                            }).forEach(c => {
+                                this.allCourses.push({
+                                    courseCode: c.concept.name,
+                                    imageURL: c.course.imageURL,
+                                    courseName: c.course.courseName,
+                                    isInternal: c.course.isInternal,
+                                    isTeaching: c.isTeaching,
+                                    workspaces: c.workspaces,
+                                    hasExposedGraph: c.hasExposedGraph,
+                                })
+                            })
+                            // {% if request.blueprint == "instructor" %}
+                            let unexposedCourse = this.allCourses.filter(course => course.isTeaching && !
+                                course.hasExposedGraph)
+                            if (unexposedCourse.length > 0) {
+                                this.$root.errorDisplay({},
+                                    unexposedCourse.length + ' course' + (unexposedCourse > 1 ? 's' :
+                                        '') + ' that you are teaching has no published graph.')
+                                this.$nextTick(() => { // need to wait the courses v-card to be rendered
+                                    unexposedCourse.every(c => {
+                                        console.log(c, Object.keys(this.$refs), Object.keys(
+                                                this.$refs)
+                                            .includes(c.courseCode))
+                                        if (Object.keys(this.$refs).includes(c
+                                                .courseCode)) {
+                                            let el = this.$refs[c.courseCode][0].$el
+                                            el.scrollIntoView({
+                                                behavior: "smooth",
+                                                block: "center"
+                                            })
+                                            let ev = new Event("mousedown")
+                                            let offset = el.getBoundingClientRect()
+                                            ev.clientX = offset.left + 1
+                                            ev.clientY = offset.top + 1
+                                            el.dispatchEvent(ev)
+                                            this.$nextTick(function () {
+                                                el.dispatchEvent(new Event(
+                                                    "mouseup"))
+                                            })
+                                            return false
+                                        }
+                                        return true
+                                    })
+                                })
+                            }
+                            // {% endif %}
+                            this.search()
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting courses information.')
+                        }
+                    })
+            },
+            // {% if request.blueprint == "instructor" %}
+            selectTab(tab) {
+                let query = new URLSearchParams(window.location.search)
+                if (tab == 1) {
+                    this.filter.working = true
+                    query.set("work", true)
+                } else if (tab == 0) {
+                    this.filter.working = false
+                    query.delete("work")
+                }
+                this.search()
+                window.history.pushState(
+                    window.history.state, "", window.location.pathname + (query.toString() != '' ? '?' +
+                        query.toString() : ''))
+            },
+            courseInfo(course) {
+                this.course = course
+                this.courseInfoDialogue = true
+                this.courseCode = course.courseCode
+                this.courseName = course.courseName
+                this.imageURL = course.imageURL
+            },
+            openCoursePreview(course) {
+                this.courseCode = course.courseCode
+                this.$refs.coursePreviewIframe.onload = () => {
+                    this.coursePreviewDialogue = true;
+                    this.$refs.coursePreviewIframe.onload = null
+                }
+                let newUrl = "{{ url_for('course')}}" + encodeURIComponent(this.courseCode)
+                if (this.coursePreviewUrl == newUrl) {
+                    this.$refs.coursePreviewIframe.contentWindow.location.reload()
+                } else {
+                    this.coursePreviewUrl = "{{ url_for('course')}}" + encodeURIComponent(this.courseCode)
+                }
+            },
+            openURL(url) {
+                window.location.href = url
+            },
+            openWorkspaceDialogue(course) {
+                this.courseCode = course.courseCode
+                this.$refs.workspaceForm.loadData(this.courseCode);
+                this.workspaceDialogue = true;
+            },
+            openGraphImportDialogue(course) {
+                this.courseCode = course.courseCode
+                this.$refs.graphImportForm.loadData(this.courseCode);
+                this.graphImportDialogue = true;
+            },
+            updateCourseInfo() {
+                if (this.$refs.courseInfoFormControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(this.course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                courseName: this.courseName,
+                                imageURL: this.imageURL,
+                                name: this.courseCode,
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Update failed for unknown reason.',
+                                () => {
+                                    location.reload()
+                                })
+                        })
+                }
+            },
+            courseAssignment(course) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                this.course = course
+                fetch("{{ url_for('RESTful.course.query') }}/" + course.courseCode + "/instructors", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.instructors) {
+                            this.instructors = body.instructors
+                            this.instructorDialogue = true
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting instructor assignment information.')
+                        }
+
+                    })
+            },
+            join(course) {
+                this.$root.actionDisplay("You are joining " + course.courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: true
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.allCourses[this.allCourses.map(c => c.courseCode)
+                                        .indexOf(course.courseCode)].isTeaching = true
+                                    this.search()
+                                })
+
+                        })
+                })
+            },
+            quit(course) {
+                this.$root.actionDisplay("You are quiting " + course.courseCode, "sure", () => {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(course
+                            .courseCode), {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                join: false
+                            })
+                        })
+                        .then(response => {
+                            try {
+                                return response.json()
+                            } catch {
+                                this.$root.progress.show = false
+                                this.$root.errorDisplay({},
+                                    'Unexpected error occured.')
+                            }
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Assignment failed for unknown reason.',
+                                () => {
+                                    this.$root.snackBars.actionSnackBar.show = false
+                                    this.allCourses[this.allCourses.map(c => c.courseCode)
+                                        .indexOf(course.courseCode)].isTeaching = false
+                                    this.search()
+                                })
+                        })
+                })
+            },
+            clearQueryString() {
+                var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname
+                window.history.pushState({
+                    path: newurl
+                }, '', newurl)
+            },
+            // {% endif %}
+            // {% if request.blueprint == "DLTC" %}
+
+            assign(userId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.course.patch') }}" + this.course
+                        .courseCode, {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                userId: userId,
+                                assignment: true
+                            })
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Assignment failed for unkown reason.',
+                            () => {
+                                this.courseAssignment(this.course)
+                            })
+
+                    })
+            },
+            unassign(userId) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.course.patch') }}" + this.course
+                        .courseCode, {
+                            method: 'PATCH',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                userId: userId,
+                                assignment: false
+                            })
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body,
+                            'Assignment failed for unkown reason.',
+                            () => {
+                                this.courseAssignment(this.course)
+                            })
+
+                    })
+            },
+            courseIsInternal(course) {
+                this.course = course
+                this.$root.actionDisplay("This set " + course.courseCode + " " + (this.course.isInternal ===
+                        false ? "internal" : "public"),
+                    "proceed", () => {
+                        if (this.$root.progress.show == true) {
+                            this.$root.bePatientSnackBar.show = true
+                            return
+                        }
+                        this.$root.progress.show = true
+                        fetch("{{ url_for('RESTful.course.patch') }}" + encodeURIComponent(this.course
+                                .courseCode), {
+                                method: 'PATCH',
+                                cache: 'no-store',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    isInternal: this.course.isInternal === false ? true : false
+                                })
+                            })
+                            .then(response => {
+                                try {
+                                    return response.json()
+                                } catch {
+                                    this.$root.progress.show = false
+                                    this.$root.errorDisplay({},
+                                        'Unexpected error occured.')
+                                }
+                            })
+                            .then(body => {
+                                this.$root.progress.show = false
+                                this.$root.responseSnackBar(body,
+                                    'Update failed for unknown reason.',
+                                    () => {
+                                        this.$root.snackBars.actionSnackBar.show = false
+                                        let index = this.allCourses.map(c => c.courseCode).indexOf(
+                                            course.courseCode)
+                                        this.allCourses[index].isInternal = !this.allCourses[index]
+                                            .isInternal;
+                                        this.search()
+                                    })
+                            })
+                    })
+            },
+            courseAssignment(course) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                this.course = course
+                fetch("{{ url_for('RESTful.course.query') }}" + course.courseCode + "/instructors", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.instructors) {
+                            this.instructors = body.instructors
+                            this.instructorDialogue = true
+
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting instructor assignment information.')
+                        }
+
+                    })
+            },
+            // {% endif %}
+            clearFilter(except = ['working']) {
+                Object.keys(this.filter).forEach(key => {
+                    if (except.includes(key)) return;
+                    this.filter[key] = false
+                })
+            },
+            search() {
+                if (this.searchText == "") {
+                    this.courses = this.allCourses.slice()
+                } else {
+                    this.courses = this.allCourses.filter(c =>
+                        c.courseCode.toLowerCase().includes(this.searchText.toLowerCase()) ||
+                        c.courseName.toLowerCase().includes(this.searchText.toLowerCase())
+                    )
+                }
+                // {% if request.blueprint == "instructor" or request.blueprint == "DLTC" %}
+                this.num_courses_wo_search_text = this.allCourses.length
+                this.num_courses_wo_filter = this.courses.length
+
+                this.filter_length = Object.keys(this.filter).map(key => this.filter[key]).filter(value =>
+                    value).length
+                if (this.filter_length > 0) {
+                    this.courses = this.courses.filter(c =>
+                        !(this.filter.public && c.isInternal) &&
+                        !(this.filter.internal && !c.isInternal) &&
+                        !(this.filter.joined && !c.isTeaching) &&
+                        !(this.filter.working && c.workspaces.length == 0)).slice()
+                    this.num_courses_wo_search_text = this.allCourses.filter(c =>
+                        !(this.filter.public && c.isInternal) &&
+                        !(this.filter.internal && !c.isInternal) &&
+                        !(this.filter.joined && !c.isTeaching) &&
+                        !(this.filter.working && c.workspaces.length == 0)).length
+                    this.num_working_courses_wo_filter = this.allCourses.filter(c =>
+                        c.workspaces.length > 0 &&
+                        (
+                            this.searchText == "" ||
+                            c.courseCode.toLowerCase().includes(this.searchText.toLowerCase()) ||
+                            c.courseName.toLowerCase().includes(this.searchText.toLowerCase())
+                        )).length
+                    this.num_all_courses_w_filter = this.allCourses.filter(c =>
+                        !(this.filter.public && c.isInternal) &&
+                        !(this.filter.internal && !c.isInternal) &&
+                        !c.isTeaching &&
+                        !(this.filter.joined && !c.isTeaching) &&
+                        (
+                            this.searchText == "" ||
+                            c.courseCode.toLowerCase().includes(this.searchText.toLowerCase()) ||
+                            c.courseName.toLowerCase().includes(this.searchText.toLowerCase())
+                        )).length
+                }
+                // {% endif %}
+            },
+        },
+        mounted: function () {
+            self = this
+            this.$root.pageIntro = () => {
+                self._tour = self.$shepherd({
+                    useModalOverlay: true,
+                    defaultStepOptions: {
+                        classes: 'shadow-md bg-purple-dark',
+                        scrollTo: {
+                            behavior: 'smooth',
+                            block: 'center'
+                        },
+                        cancelIcon: {
+                            enabled: true
+                        },
+                        canClickTarget: false,
+                        buttons: [{
+                            text: 'Next',
+                            action: () => self._tour.next()
+                        }],
+                    }
+                })
+                if (self.$refs["shepherd-newWorkspace"] && self.$refs["shepherd-newWorkspace"].length >
+                    0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-newWorkspace"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: 'Click to create an empty workspace',
+                    })
+                }
+                if (self.$refs["shepherd-recentVisit"] && self.$refs["shepherd-recentVisit"].length >
+                    0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-recentVisit"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to enter a recently visited workspace",
+                    })
+                }
+                if (self.$refs["shepherd-searchText"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-searchText"],
+                            on: 'bottom'
+                        },
+                        text: "You may search courses with it's code or it's name",
+                    })
+                }
+                if (self.$refs["shepherd-filter"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-filter"],
+                            on: 'bottom'
+                        },
+                        text: "Click to apply filter on courses",
+                    })
+                }
+                if (self.$refs["shepherd-joinNewCourse"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-joinNewCourse"].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to manage course duty",
+                    })
+                }
+                if (self.$refs["shepherd-joinNewCourse"]) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-joinNewCourse"].$el,
+                            on: 'bottom'
+                        },
+                        text: "Make sure the course you are teaching are labeled as 'on-duty'",
+                        beforeShowPromise: () =>
+                            new Promise((resolve, reject) => {
+                                this.miniSync = false
+                                this.$refs["shepherd-joinNewCourse"].$el.dispatchEvent(
+                                    new MouseEvent("click"))
+                                setTimeout(() => {
+                                    resolve();
+                                }, 100);
+                            }),
+                    })
+                }
+                if (self.$refs["shepherd-working"] && self.$refs["shepherd-working"].length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-working"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to toggle the label",
+                    })
+                }
+                if (self.$refs["shepherd-listCourseInstructor"] && self.$refs[
+                        "shepherd-listCourseInstructor"].length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-listCourseInstructor"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to assign/unassign instructors",
+                    })
+                }
+                if (self.$refs["shepherd-manageVersions"] && self.$refs["shepherd-manageVersions"]
+                    .length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-manageVersions"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to enter the version management panel",
+                    })
+                }
+                if (self.$refs["shepherd-approveUpdates"] && self.$refs["shepherd-approveUpdates"]
+                    .length > 0) {
+                    self._tour.addStep({
+                        attachTo: {
+                            element: self.$refs["shepherd-approveUpdates"][0].$el,
+                            on: 'bottom'
+                        },
+                        text: "Click to view update requests from instructors",
+                    })
+                }
+                self._tour.start();
+                self._tour.on("complete", function () {
+                    localStorage.setItem(
+                        "{{request.endpoint}}Toured", true)
+                })
+            }
+            self.loadData()
+        },
+        template: '#content',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endblock %}

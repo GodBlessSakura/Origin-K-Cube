@@ -1,0 +1,182 @@
+{% macro componentContent() %}
+<v-card flat>
+    <v-card-title class="text-h5 grey lighten-2">
+        New repository for ${courseCode}:
+    </v-card-title>
+    <v-form ref="createRepositoryControl">
+        <v-autocomplete return-object :items="trunkOrBranch" item-text="tag" item-value="deltaGraphId"
+            v-model="selectedNode" label="base on version (★ for the active version provided by the department):">
+            <template v-slot:selection="data">
+                <template>
+                    <v-chip>
+                        <v-list-item-content v-text="data.item.tag">
+                        </v-list-item-content>
+                        <v-icon v-if="data.item.isActive" small>star</v-icon>
+                    </v-chip>
+                </template>
+            </template>
+            <template v-slot:item="data">
+                <template>
+                    <v-list-item-content v-text="data.item.tag">
+                    </v-list-item-content>
+                    <v-icon v-if="data.item.isActive" small>star</v-icon>
+                </template>
+            </template>
+        </v-autocomplete>
+        <v-text-field label="tag of repository" :rules="repoTagRules" v-model="repoTag" required></v-text-field>
+        <v-text-field label="tag of workspace" :rules="wTagRules" v-model="w_tag" required></v-text-field>
+    </v-form>
+    <v-divider></v-divider>
+
+    <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" text @click="createRepository()">
+            create
+        </v-btn>
+    </v-card-actions>
+</v-card>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="kcube-workspace-form">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('kcube-workspace-form', {
+        data: () => ({
+            courseCode: null,
+            trunkOrBranch: undefined,
+            selectedNode: undefined,
+            repoTag: new Date().toLocaleString('en-US', {
+                day: '2-digit',
+                year: '2-digit',
+                month: '2-digit',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hour12: false,
+            }).replaceAll('/', '-'),
+            repoTagRules: [
+                v => !!v || 'Repository tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Repository tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["tag"]}}/.test(v)) ||
+                'Repository tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+            w_tag: new Date().toLocaleString('en-US', {
+                day: '2-digit',
+                year: '2-digit',
+                month: '2-digit',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hour12: false,
+            }).replaceAll('/', '-') + " workspace",
+            wTagRules: [
+                v => !!v || 'Tag name is required',
+                v => (v && v.length > 3 && v.length < 101) ||
+                'Tag name should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["w_tag"]}}/.test(v)) ||
+                'Tag name can only contains alphanumeric characters, hyphen, comma, colon, dot and space.'
+            ],
+        }),
+        methods: {
+            loadData(courseCode) {
+                this.courseCode = courseCode
+                this.trunkOrBranch = []
+                this.selectedNode = undefined
+                this.$root.progress.show = true
+                let treePromise =
+                    fetch(
+                        "{{ url_for('RESTful.tree.get') }}" + this.courseCode +
+                        "?isInstructor=True&amp;isDLTC=False", {
+                            method: 'GET',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                    .then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.edges && body.trunk_nodes && body.branch_nodes && body
+                            .workspace_nodes) {
+                            [body.trunk_nodes, body.branch_nodes].forEach(nodes => {
+                                nodes.forEach(node => {
+                                    let item = {
+                                        tag: node.property.tag,
+                                        deltaGraphId: node.property
+                                            .deltaGraphId,
+                                        isActive: node.isActive
+                                    }
+                                    this.trunkOrBranch.push(item)
+                                    if (node.isActive) {
+                                        this.selectedNode = item
+                                    }
+                                })
+                            })
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+                Promise.all([treePromise]).then(_ => {
+                    this.$root.progress.show = false
+                })
+            },
+            createRepository() {
+                if (this.$refs.createRepositoryControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.workspace.post') }}" + this.selectedNode.deltaGraphId, {
+                            method: 'POST',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                tag: this.repoTag,
+                                repository: true,
+                                w_tag: this.w_tag
+                            })
+                        })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.repositoryCreateDialog = false
+                                    url = "{{ url_for('instructor.workspace')}}" +
+                                        body.deltaGraphId
+                                    if (window.location !== window.parent.location) {
+                                        let w = window.open(url, '_blank')
+                                    } else {
+                                        window.location.href = url
+                                    }
+                                })
+                        })
+                }
+            },
+
+        },
+        template: '#kcube-workspace-form',
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

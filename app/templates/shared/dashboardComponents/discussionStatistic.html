@@ -1,0 +1,114 @@
+{% set widgetComponentName = 'kcube-' + request.blueprint + '-discussionStatistic' %}
+{% macro componentContent() %}
+<div style="height: 100%; width: 100%;">
+    <div ref="canvas" style="height: 99%; width: 99%;"></div>
+</div>
+{% endmacro %}
+{% macro component() %}
+<script type="text/x-template" id="{{widgetComponentName}}">
+    {{ componentContent()}}
+</script>
+{% endmacro %}
+{% macro script() %}
+<script>
+    (() => {
+        widgetName = 'Student feedback'
+        widgetComponentName = '{{widgetComponentName}}'
+        KCube.widgetName.push(widgetName)
+        KCube.widgetOptions[widgetName] = {
+            widgetName: widgetName,
+            component: widgetComponentName,
+            minW: 2,
+        }
+    })();
+    Vue.component(widgetComponentName, {
+        data: () => ({}),
+        methods: {
+            loadData() {
+                fetch("{{ url_for('RESTful.feedback.query', discussionStatistic=True) }}", {
+                        method: "GET",
+                        ...dashboardOption.fetchOption
+                    }).then(response => {
+                        try {
+                            return response.json()
+                        } catch {
+                            this.$root.progress.show = false
+                            this.$root.errorDisplay({},
+                                'Unexpected error occured.')
+                        }
+                    })
+                    .then(body => {
+                        if (body.items) {
+                            let element = this.$refs.canvas
+                            this.chart = echarts.init(element);
+                            let dates = body.items.map(item =>
+                                new Date(item.discussion.creationDate.split('T')[0]))
+                            let today = new Date()
+                            let firstDay = Math.min(...dates)
+                            firstDay = new Date(firstDay)
+                            let days = []
+                            for (; firstDay < today; firstDay.setDate(firstDay.getDate() + 1)) {
+                                days.push(firstDay.toLocaleDateString())
+                            }
+                            let option = {
+                                legend: {
+                                    data: body.items.map(item => item.course.name)
+                                },
+                                xAxis: {
+                                    data: days,
+                                },
+                                yAxis: {
+                                    minInterval: 1
+                                },
+                                series: body.items.reduce((series, item) => {
+                                    let date = (new Date(item.discussion.creationDate.split(
+                                        'T')[0])).toLocaleDateString()
+                                    let foundSeries = series.filter(s => s.name == item.course
+                                        .name)
+                                    if (foundSeries.length > 0) {
+                                        let foundDate = foundSeries[0].data.filter(d => d[0] ==
+                                            date)
+                                        if (foundDate.length > 0) {
+                                            foundDate[0][1]++
+                                        } else {
+                                            foundSeries[0].data.push([date, 1])
+                                        }
+                                    } else {
+                                        series.push({
+                                            name: item.course.name,
+                                            type: 'line',
+                                            stack: 'Total',
+                                            areaStyle: {},
+                                            emphasis: {
+                                                focus: 'series'
+                                            },
+                                            data: days.map(day => [day, (day == date ?
+                                                1 : 0)])
+                                        }, )
+                                    }
+                                    return series
+                                }, [])
+                            };
+                            console.log(option)
+                            this.chart.setOption(option)
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting versions information.')
+                        }
+                    })
+
+            }
+        },
+        template: '#' + widgetComponentName,
+        delimiters: ['${', '}'],
+        mounted: function () {
+            new ResizeObserver(() => {
+                if (this.chart) this.chart.resize()
+            }).observe(this.$el)
+            this.loadData()
+        },
+    })
+</script>
+{% endmacro %}
+{{ component() }}
+{{ script() }}

@@ -1,0 +1,203 @@
+{% macro component() %}
+<v-card>
+    <v-container>
+        <v-row>
+            <v-expansion-panels>
+                <v-expansion-panel>
+                    <v-expansion-panel-header>
+                        Suggest new KG relationship
+                    </v-expansion-panel-header>
+                    <v-expansion-panel-content>
+                        <v-form ref="suggestionControl">
+                            <v-text-field v-model="suggestionName" :rules="suggestionNameRules" dense
+                                label="Relationship Name">
+                            </v-text-field>
+                        </v-form>
+                        <v-btn small @click="submitSuggestion">
+                            submit
+                        </v-btn>
+                    </v-expansion-panel-content>
+                </v-expansion-panel>
+            </v-expansion-panels>
+        </v-row>
+        <v-row>
+            <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details>
+            </v-text-field>
+        </v-row>
+        <v-row>
+            <v-data-table :headers="headers" style="width:100%" :items="relationships" :items-per-page="500" multi-sort
+                :search="search">
+                <template v-slot:item.nOfProposers="{ item }">
+                    <v-btn rounded :color="item.nOfProposers>0?'primary':'blue-grey lighten-3'"
+                        @click="flipProposal(item.name, item.amIProposing)">
+                        ${item.nOfProposers}
+                        <v-simple-checkbox readonly color="white" :value="item.amIProposing"
+                            @click="flipProposal(item.name, item.amIProposing)">
+                        </v-simple-checkbox>
+                    </v-btn>
+                </template>
+
+                <template v-slot:item.nOfApprovers="{ item }">
+                    <v-btn rounded :color="item.nOfApprovers>0?'success':'blue-grey lighten-3'" {% if
+                        PERMISSION and PERMISSION.canApproveRelationship %}
+                        @click="flipApproval(item.name, item.amIApproving)" {% else %} depressed :ripple="false" {%
+                        endif %}>
+                        ${item.nOfApprovers}
+                        {% if PERMISSION and PERMISSION.canApproveRelationship %}
+                        <v-simple-checkbox readonly color="white" :value="item.amIApproving"
+                            @click="flipApproval(item.name, item.amIApproving)">
+                        </v-simple-checkbox>
+                        {% endif %}
+                    </v-btn>
+                </template>
+
+            </v-data-table>
+        </v-row>
+    </v-container>
+</v-card>
+{% endmacro %}
+{% macro script() %}
+<script>
+    Vue.component('collaborate-relationship', {
+        data: () => ({
+            headers: [{
+                    text: 'Relationship name',
+                    value: 'name',
+                },
+                {
+                    text: '# of proposers',
+                    value: 'nOfProposers',
+                },
+                {
+                    text: '# of approvers',
+                    value: 'nOfApprovers',
+                },
+            ],
+            relationships: [],
+            search: '',
+            suggestionControl: true,
+            suggestionName: '',
+            suggestionNameRules: [v => !!v || 'Relationship name is required',
+                v => (v && v.length > 3 && v.length) < 101 ||
+                'Relationship name  should be anything between 4 and 100 charactors',
+                v => (v && /{{regExpRules["r_name"]}}/.test(v)) ||
+                'Relationship name  can only contains alphanumeric characters and space.'
+            ],
+        }),
+        methods: {
+            loadData() {
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.relationship.query', userView=True) }}", {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+                        this.$root.progress.show = false
+                        if (body.relationships) {
+                            this.relationships = body.relationships
+                        } else {
+                            this.$root.errorDisplay(body,
+                                'Unexpected error on getting relationship information.')
+                        }
+                    })
+            },
+            flipProposal(name, value) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.relationship.createProposal') }}", {
+                        method: value ? "DELETE" : "PUT",
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: name
+                        })
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Unexpected error on setting proposal status.',
+                            this.loadData)
+                    })
+            },
+            //{% if PERMISSION and PERMISSION.canApproveRelationship %}               
+            flipApproval(name, value) {
+                if (this.$root.progress.show == true) {
+                    this.$root.bePatientSnackBar.show = true
+                    return
+                }
+                this.$root.progress.show = true
+                fetch("{{ url_for('RESTful.relationship.createApproval') }}", {
+                        method: value ? "DELETE" : "PUT",
+                        cache: 'no-store',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: name
+                        })
+                    })
+                    .then(response => {
+                        return response.json()
+                    })
+                    .then(body => {
+
+                        this.$root.progress.show = false
+                        this.$root.responseSnackBar(body, 'Unexpected error on setting proposal status.',
+                            this.loadData)
+                    })
+            },
+            //{% endif  %}
+            submitSuggestion() {
+                if (this.$refs.suggestionControl.validate()) {
+                    if (this.$root.progress.show == true) {
+                        this.$root.bePatientSnackBar.show = true
+                        return
+                    }
+                    this.$root.progress.show = true
+                    fetch("{{ url_for('RESTful.relationship.createProposal') }}", {
+                            method: 'PUT',
+                            cache: 'no-store',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                name: this.suggestionName,
+                            })
+                        })
+                        .then(response => {
+                            return response.json()
+                        })
+                        .then(body => {
+                            this.$root.progress.show = false
+                            this.$root.responseSnackBar(body,
+                                'Creation failed for unknown reason.',
+                                () => {
+                                    this.$refs.suggestionControl.reset()
+                                    this.loadData()
+                                })
+                        })
+                }
+            }
+        },
+        template: '#collaborate-relationship',
+        mounted: function () {
+            this.loadData()
+        },
+        delimiters: ['${', '}'],
+    })
+</script>
+{% endmacro %}

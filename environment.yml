@@ -1,0 +1,49 @@
+name: kcubeExecute
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - argon2-cffi=21.1.0
+  - blinker=1.4=py_1
+  - ca-certificates=2021.10.8
+  - cffi=1.14.6
+  - click=8.0.3
+  - colorama=0.4.4=pyh9f0ad1d_0
+  - dataclasses=0.8=pyhc8e2a94_3
+  - flask=2.0.2=pyhd3eb1b0_0
+  - flask-caching=1.10.1=pyhd8ed1ab_0
+  - flask-mail=0.9.1=py_2
+  - flask-wtf=0.15.1=pyhd8ed1ab_0
+  - importlib-metadata=4.8.1
+  - itsdangerous=2.0.1=pyhd8ed1ab_0
+  - jinja2=3.0.2=pyhd8ed1ab_0
+  - markupsafe=2.0.1
+  - neo4j-python-driver=4.3.4
+  - openssl=3.0.0
+  - pip=21.3.1=pyhd8ed1ab_0
+  - pycparser=2.20=pyh9f0ad1d_2
+  - python=3.7.10
+  - python_abi=3.7=2_cp37m
+  - pytz=2021.3=pyhd3eb1b0_0
+  - setuptools=58.2.0
+  - six=1.16.0=pyh6c4a22f_0
+  - sqlite=3.36.0
+  - typing_extensions=3.10.0.2=pyha770c72_0
+  - werkzeug=2.0.1=pyhd8ed1ab_0
+  - wheel=0.37.0=pyhd8ed1ab_1
+  - wtforms=2.3.3=pyhd8ed1ab_0
+  - zipp=3.6.0=pyhd8ed1ab_0
+  - tensorflow=1.13.1
+  - pip:
+    - black==21.9b0
+    - mypy-extensions==0.4.3
+    - pathspec==0.9.0
+    - platformdirs==2.4.0
+    - regex==2021.10.23
+    - tomli==1.2.1
+    - typed-ast==1.4.3
+    - oic==1.5.0
+    - ampligraph==1.4.0
+    - flask-socketio
+    - eventlet
+prefix: C:\Users\csckchan\Anaconda3\envs\kcubeExecute
